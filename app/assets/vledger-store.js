@@ -460,7 +460,7 @@ export class Wallet {
       if (!r || r.status === 'open') { out.push(c); continue; }
       const key = (await cli.ref()).key;
       const problem = r.ruling ? await this.checkRuling(r.ruling, ev.body.receipt, key) : null;
-      out.push({ ...c, status: r.status, ...(problem ? { problem } : {}) });
+      out.push({ ...c, status: r.status, ...(problem ? { problem } : {}), ...(r.reason ? { reason: String(r.reason).slice(0, 2000) } : {}) });
       if (r.ruling && !problem && !rulings.some((x) => x.sig === r.ruling.sig)) rulings = [...rulings, r.ruling];
       changed = true;
     }

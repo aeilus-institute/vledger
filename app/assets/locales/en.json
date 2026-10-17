@@ -523,7 +523,7 @@
   "cs.request.decision": "A decision (only if you both agreed it binds)",
   "cs.statement": "Your statement",
   "cs.go": "Send to the arbiter",
-  "cs.sent": "Sent. The answer usually comes within 14 days; check it here.",
+  "cs.sent": "Sent. Check here for the answer; the arbiter rules say how long it takes.",
   "cs.check": "Check the answer",
   "cs.none": "No answer yet",
   "cs.got": "The arbiter answered",
@@ -537,5 +537,6 @@
   "reg.openHint": "A registry is a signed list of works, objects or events an organisation offers. The institute registry lists its research works; after you read or apply one, you can tell the institute what it gave you.",
   "reg.url": "Registry address",
   "reg.openGo": "Open",
-  "reg.fromFile": "From a file"
+  "reg.fromFile": "From a file",
+  "cs.declined": "The arbiter declined the case: {reason}"
 }

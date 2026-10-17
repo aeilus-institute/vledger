@@ -40,7 +40,7 @@ defs = {
         'rulings': {'type': 'array', 'items': {'$ref': 'arbiter.schema.json#/$defs/ruling'}},
         'cases': {'type': 'array', 'items': {'type': 'object', 'required': ['caseId', 'arbiterUrl', 'request', 'openedAt', 'status'], 'properties': {
             'caseId': c('uuid'), 'arbiterUrl': {'type': 'string', 'format': 'uri'}, 'request': {'enum': ['attest', 'opinion', 'decision']},
-            'openedAt': c('time'), 'status': {'enum': ['open', 'decided', 'declined']}, 'problem': {'type': 'string'}}}}},
+            'openedAt': c('time'), 'status': {'enum': ['open', 'decided', 'declined']}, 'problem': {'type': 'string'}, 'reason': {'type': 'string', 'maxLength': 2000}}}}},
         'if': {'properties': {'status': {'const': 'suggested'}}}, 'then': {'required': ['suggestedBy']}},
     'elementType': {'type': 'object', 'required': ['name', 'category'], 'properties': {'name': LINE, 'category': {'enum': CATS}}},
     'plan': {'type': 'object', 'required': ['eventId', 'author', 'promise'], 'properties': {

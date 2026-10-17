@@ -551,6 +551,7 @@ function eventCard(ev, as) {
       h('div', { class: 'vw-phase' }, h('div', { class: 'vw-muted' }, t('phase.retro')), retro ? assessmentView(retro) : h('span', { class: 'vw-muted' }, realized ? '-' : t('phase.retroAfter')))),
     (b.rulings || []).map((r) => h('p', { class: 'vw-ruling' }, h('span', { class: 'vw-chip' + (r.binding ? ' vw-chip-sys' : '') }, t(r.binding ? 'cs.binding' : 'cs.opinion')), ' ', t('cs.ruling', { decision: r.decision }))),
     (b.cases || []).some((c) => c.status === 'open') ? h('p', { class: 'vw-muted vw-small' }, t('cs.open')) : null,
+    (b.cases || []).filter((c) => c.status === 'declined').map((c) => h('p', { class: 'vw-muted vw-small' }, t('cs.declined', { reason: c.reason || '-' }))),
     eff !== null ? h('p', { class: 'vw-muted vw-small' }, t('ev.efficiency', { e: num(eff), net: pct(latest.body.v - latest.body.spentV) })) : null,
     h('div', { class: 'vw-actions' },
       h('button', { class: 'vw-btn', onclick: () => assessDialog(ev.rootId, null, { phase: realized ? 'retro' : 'realized' }) }, t(realized ? 'ev.assessLater' : 'ev.assess')),

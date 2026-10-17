@@ -630,6 +630,10 @@
               },
               "problem": {
                 "type": "string"
+              },
+              "reason": {
+                "type": "string",
+                "maxLength": 2000
               }
             }
           }
