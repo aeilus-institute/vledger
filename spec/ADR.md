@@ -87,3 +87,42 @@ tools). In L1 the reference modules move into `docroot/tools/vledger/assets/` an
 open standard repository (L5).
 
 **Consequences.** No changes to the site code in L0; nothing deployed.
+
+## ADR-008 Events instead of exchanges (d2, 2026-10-17)
+
+**Context.** The owner (TZ v0.3 D-16, D-17) described the wallet as a timeline of "someone did something with
+something or someone", where the holder may be the actor, the affected one, or a user of someone else's object, and
+where events may come from a registry (a municipality built a road).
+
+**Decision.** One record kind `event` with `actor`, `action`, `objects`, `affected` and the holder's `role`. An exchange
+is just an event with objects passing between two contacts. Plans are separate records authored by the supplier (or by
+self for one's own expectation); assessments are `realized` or `retro`, and retro needs an earlier realized one.
+
+**Consequences.** d1 wallets are not migrated: no wallet had been published.
+
+## ADR-009 Value systems and global goal weight (d2)
+
+**Context.** D-19: when assessing, show references of the same value system and the system's goals with their global
+value in the holder's whole value system. D-24: spent value and efficiency.
+
+**Decision.** `value-system` records with weight `W`; global goal weight `w = ω * σ`; `v` and `spentV` with the same
+formula; `e = v / spentV`. Goals without a system go to "Other" (mean `W`); goals of a dropped system weigh 0.
+Own assessments can be marked `reference`; registries carry public references.
+
+## ADR-010 Addresses, cards, messages, relays (d2)
+
+**Context.** D-18 and D-20: every wallet has an address and a QR code; assessments travel P2P through the institute,
+which passes but does not keep them; those who keep them must say so.
+
+**Decision.** Address `vw1:` + Ed25519 key; a signed card adds an ECDH P-256 exchange key and a storage policy.
+Messages are ECIES-encrypted to the card's exchange key and signed by the sender (or anonymous). The relay protocol
+holds a message only until pickup (at most 14 days) and logs no content. Request blocking is applied by the receiving
+wallet, so senders cannot tell blocked from ignored.
+
+**Consequences.** To send an encrypted message you need the recipient's card, not only the address; a QR can carry
+the address alone (contact) or point to the card (later, through the relay or a registry).
+
+## ADR-011 Suggested events (d2)
+
+**Decision.** Devices and agents deliver `suggestion` messages; events are stored with `status: suggested` and stay
+out of the timeline and analytics until the holder confirms. Raw recordings never enter the wallet.

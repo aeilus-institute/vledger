@@ -1,23 +1,256 @@
 {
   "note": "Test data only.",
   "passphrase": "vledger test passphrase A",
-  "providerRecovery": {
-    "slotId": "r1",
-    "privateJwk": {
-      "crv": "P-256",
-      "d": "zAnL36MeFsBkcWtFSJaMJb5oKwa6pO9SFacpDWCxqKg",
-      "ext": true,
-      "key_ops": [
-        "deriveBits"
-      ],
-      "kty": "EC",
-      "x": "QIxyOrJH-0MpMJ4GcMVEZbQqzNF7K4r8d_xVWINquL4",
-      "y": "O6pxGh24jGqYPE_qxV3yAaVZ4ow0TUN7m3mgcwDgd8U"
-    }
-  },
+  "address": "vw1:gAakZO0_RFoZ6h9iHDSYzV7dXInkcIZm2EwFLtipmT0",
+  "selfId": "01a1496d-521a-7ccf-9109-9124cf17f45c",
   "records": [
     {
-      "id": "01a146c3-bbe0-7dd7-8884-58d8209daf72",
+      "id": "01a1496d-521a-7f4d-9073-5ea66a3e1aff",
+      "payload": {
+        "kind": "value-system",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "title": "Family",
+          "W": 3,
+          "status": "active"
+        }
+      }
+    },
+    {
+      "id": "01a1496d-521a-7f2d-9171-3b75c78b8678",
+      "payload": {
+        "kind": "value-system",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "title": "City",
+          "W": 1,
+          "status": "active",
+          "registryUrl": "https://example-municipality.test/vledger/registry.json"
+        }
+      }
+    },
+    {
+      "id": "01a1496d-521a-7ccf-9109-9124cf17f45c",
+      "payload": {
+        "kind": "contact",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "type": "self",
+          "name": "Me",
+          "address": "vw1:gAakZO0_RFoZ6h9iHDSYzV7dXInkcIZm2EwFLtipmT0"
+        }
+      }
+    },
+    {
+      "id": "01a1496d-521b-737e-b426-a7ce775464b5",
+      "payload": {
+        "kind": "contact",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "type": "person",
+          "name": "Daughter",
+          "address": "vw1:1orNr8BeFCs0Z-6sEFYSHTeB53tLZBrDtuY9ZYelSJQ",
+          "card": {
+            "card": {
+              "type": "aevri.vledger.card",
+              "version": 1,
+              "address": "vw1:1orNr8BeFCs0Z-6sEFYSHTeB53tLZBrDtuY9ZYelSJQ",
+              "kind": "person",
+              "encKey": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "UhKsCmLJy3F1e0EhSCrW0O0Sv4f46_1euj_1RAnu3PU",
+                "y": "yzY9Jgzn_XN19bf3RTvYbMGslfciWRt8ZhXnBxT6evE"
+              },
+              "storage": {
+                "stores": true,
+                "purpose": "Keep what my family tells me",
+                "retentionDays": 3650,
+                "publishes": "no"
+              },
+              "updatedAt": "2026-10-17T09:00:00Z",
+              "name": "Daughter"
+            },
+            "sig": "n3XPth0TCooWpRP1awmM2oWYXEiq6AjFXqpx2pAYrG_wiFw3pu102ksxgSIDJfWx8Yu6-vwTbrNOsVBNW-bkAQ"
+          }
+        }
+      }
+    },
+    {
+      "id": "01a1496d-521b-7524-990e-a6a8d99c70fa",
+      "payload": {
+        "kind": "contact",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "type": "state",
+          "name": "Example Municipality",
+          "address": "vw1:rmjX7JWMjF5KYhnhX6i9dA-szPgZRtrgl_IjCHE_UAQ",
+          "card": {
+            "card": {
+              "type": "aevri.vledger.card",
+              "version": 1,
+              "address": "vw1:rmjX7JWMjF5KYhnhX6i9dA-szPgZRtrgl_IjCHE_UAQ",
+              "kind": "state",
+              "encKey": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "1qYqCle3YadMknMyR74x_PXiICVlGq2lG-zRYPSysRg",
+                "y": "InpADtXuLlLB3irI9vBREs_Mo0V46SRNn4WPB1ed7uQ"
+              },
+              "storage": {
+                "stores": true,
+                "purpose": "Analytics and improving roads",
+                "retentionDays": 730,
+                "publishes": "sender-choice"
+              },
+              "updatedAt": "2026-10-17T09:00:00Z",
+              "name": "Example Municipality",
+              "registryUrl": "https://example-municipality.test/vledger/registry.json"
+            },
+            "sig": "HAw0lWDZC3AcfSdJZrsHSB1sqr8LgLAgrnMTWEyh0byzd9AdzqiECS8JYIuNOCYs5eR0Kfs2kXoB8Y45ftPqAw"
+          }
+        }
+      }
+    },
+    {
+      "id": "01a1496d-521b-75e3-8a9f-266e43a5b803",
+      "payload": {
+        "kind": "contact",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "type": "organization",
+          "name": "Example Toothpaste Co",
+          "address": "vw1:SKJVJB530SRuKvPPTQe8y_Q0NpjDz35xd6Y1RNuek3s",
+          "card": {
+            "card": {
+              "type": "aevri.vledger.card",
+              "version": 1,
+              "address": "vw1:SKJVJB530SRuKvPPTQe8y_Q0NpjDz35xd6Y1RNuek3s",
+              "kind": "organization",
+              "encKey": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "wBlqrB1DOyRyQe0jSqjWFOymp8wc7Ca8ZrfeLwNIzLg",
+                "y": "6yqkjZZdf8jd2E4jd-bo6WMi5utcZY9PhAtSvCKEEdI"
+              },
+              "storage": {
+                "stores": true,
+                "purpose": "Product improvement",
+                "retentionDays": 365,
+                "publishes": "anonymous"
+              },
+              "updatedAt": "2026-10-17T09:00:00Z",
+              "name": "Example Toothpaste Co"
+            },
+            "sig": "qU2ehHTCzESsyJ7jo7B0Bh8DAMTc3BFM8bdr5T9uuq5bDIYkOlzEdd6anNNDN2sUehA5aMGg1kFK5lbVxUHODg"
+          }
+        }
+      }
+    },
+    {
+      "id": "01a1496d-521b-78f2-96fc-ea63669488ce",
+      "payload": {
+        "kind": "contact",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "type": "organization",
+          "name": "Corner shop"
+        }
+      }
+    },
+    {
+      "id": "01a1496d-521b-7991-ad9e-8d2de01ee598",
+      "payload": {
+        "kind": "contact",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "type": "device",
+          "name": "Home hub"
+        }
+      }
+    },
+    {
+      "id": "01a1496d-521b-764a-a4f2-8281e22d0a9d",
+      "payload": {
+        "kind": "goal",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "title": "Be close to my daughter",
+          "systemId": "01a1496d-521a-7f4d-9073-5ea66a3e1aff",
+          "S": 2,
+          "status": "active",
+          "factIds": []
+        }
+      }
+    },
+    {
+      "id": "01a1496d-521b-799f-b705-321c23df3eee",
+      "payload": {
+        "kind": "goal",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "title": "Write a letter to my father",
+          "systemId": "01a1496d-521a-7f4d-9073-5ea66a3e1aff",
+          "S": 1,
+          "N": 1,
+          "status": "active",
+          "factIds": []
+        }
+      }
+    },
+    {
+      "id": "01a1496d-521b-7de5-874c-fcbd74b417b0",
+      "payload": {
+        "kind": "goal",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "title": "Healthy teeth",
+          "S": 1,
+          "status": "active",
+          "factIds": []
+        }
+      }
+    },
+    {
+      "id": "01a1496d-521b-7f51-b0f2-6ab633cf944c",
+      "payload": {
+        "kind": "goal",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "title": "Get around the city safely",
+          "systemId": "01a1496d-521a-7f2d-9171-3b75c78b8678",
+          "S": 1,
+          "status": "active",
+          "factIds": []
+        }
+      }
+    },
+    {
+      "id": "01a1496d-521b-7cfd-833a-52817ed619f5",
       "payload": {
         "kind": "settings",
         "createdAt": "2026-10-17T09:05:00Z",
@@ -26,453 +259,597 @@
         "body": {
           "planCountDefault": 0,
           "planCountBy": [],
+          "requests": {
+            "blockAll": false,
+            "blockSystems": [
+              "01a1496d-521a-7f2d-9171-3b75c78b8678"
+            ],
+            "blockContacts": []
+          },
+          "relays": [],
           "arbiters": [],
           "providers": [
             {
-              "kind": "device",
-              "label": "This browser"
-            }
-          ]
-        }
-      }
-    },
-    {
-      "id": "01a146c3-bbe0-7baa-9370-01fd7806c57d",
-      "payload": {
-        "kind": "counterparty",
-        "createdAt": "2026-10-17T09:05:00Z",
-        "supersedes": null,
-        "source": "manual",
-        "body": {
-          "type": "self",
-          "name": "Me"
-        }
-      }
-    },
-    {
-      "id": "01a146c3-bbe0-75b2-841e-8544971e9395",
-      "payload": {
-        "kind": "counterparty",
-        "createdAt": "2026-10-17T09:05:00Z",
-        "supersedes": null,
-        "source": "manual",
-        "body": {
-          "type": "person",
-          "name": "Anna",
-          "note": "Neighbour"
-        }
-      }
-    },
-    {
-      "id": "01a146c3-bbe1-7ab4-b6d5-d0ef55888881",
-      "payload": {
-        "kind": "counterparty",
-        "createdAt": "2026-10-17T09:05:00Z",
-        "supersedes": null,
-        "source": "manual",
-        "body": {
-          "type": "organization",
-          "name": "Aeilus Value Research Institute",
-          "profileUrl": "https://aeilus.institute/vledger/profile.json"
-        }
-      }
-    },
-    {
-      "id": "01a146c3-bbe1-715f-b5f7-38eede807aab",
-      "payload": {
-        "kind": "counterparty",
-        "createdAt": "2026-10-17T09:05:00Z",
-        "supersedes": null,
-        "source": "manual",
-        "body": {
-          "type": "state",
-          "name": "Local municipality"
-        }
-      }
-    },
-    {
-      "id": "01a146c3-bbe1-7746-a91c-b777a0d5991f",
-      "payload": {
-        "kind": "element-type",
-        "createdAt": "2026-10-17T09:05:00Z",
-        "supersedes": null,
-        "source": "manual",
-        "body": {
-          "name": "Thing",
-          "category": "thing"
-        }
-      }
-    },
-    {
-      "id": "01a146c3-bbe1-7734-a9cc-f31cd74f07c9",
-      "payload": {
-        "kind": "element-type",
-        "createdAt": "2026-10-17T09:05:00Z",
-        "supersedes": null,
-        "source": "manual",
-        "body": {
-          "name": "Research work",
-          "category": "information"
-        }
-      }
-    },
-    {
-      "id": "01a146c3-bbe1-7ba2-be9d-939301f98a9a",
-      "payload": {
-        "kind": "element-type",
-        "createdAt": "2026-10-17T09:05:00Z",
-        "supersedes": null,
-        "source": "manual",
-        "body": {
-          "name": "Public service",
-          "category": "service"
-        }
-      }
-    },
-    {
-      "id": "01a146c3-bbe1-7d12-bdd3-b74488d6eee9",
-      "payload": {
-        "kind": "fact",
-        "createdAt": "2026-10-17T09:05:00Z",
-        "supersedes": null,
-        "source": "manual",
-        "body": {
-          "topic": "family",
-          "text": "I have not written to my father for two years and I want to change that.",
-          "certainty": "medium",
-          "exploring": true,
-          "goalIds": []
-        }
-      }
-    },
-    {
-      "id": "01a146c3-bbe1-7b29-8ef9-87cfe7f702bc",
-      "payload": {
-        "kind": "goal",
-        "createdAt": "2026-10-17T09:05:00Z",
-        "supersedes": null,
-        "source": "manual",
-        "body": {
-          "title": "Write a letter to my father",
-          "why": "Restore contact",
-          "S": 1000000,
-          "N": 200000,
-          "unit": "points",
-          "status": "active",
-          "factIds": [
-            "01a146c3-bbe1-7d12-bdd3-b74488d6eee9"
-          ]
-        }
-      }
-    },
-    {
-      "id": "01a146c3-bbe1-792d-85f7-19c9213761bb",
-      "payload": {
-        "kind": "goal",
-        "createdAt": "2026-10-17T09:05:00Z",
-        "supersedes": null,
-        "source": "manual",
-        "body": {
-          "title": "Speak basic Greek",
-          "S": 1000000,
-          "N": 1000000,
-          "unit": "points",
-          "status": "active",
-          "factIds": []
-        }
-      }
-    },
-    {
-      "id": "01a146c3-bbe1-79be-9379-5f0c81260558",
-      "payload": {
-        "kind": "exchange",
-        "createdAt": "2026-10-17T09:05:00Z",
-        "supersedes": null,
-        "source": "manual",
-        "body": {
-          "counterpartyId": "01a146c3-bbe0-75b2-841e-8544971e9395",
-          "given": [],
-          "received": [
-            {
-              "label": "Ballpoint pen",
-              "typeId": "01a146c3-bbe1-7746-a91c-b777a0d5991f",
-              "quantity": 1
+              "kind": "device"
             }
           ],
-          "occurredAt": "2026-10-16",
-          "status": "recorded"
+          "storage": {
+            "stores": false,
+            "publishes": "no"
+          }
         }
       }
     },
     {
-      "id": "01a146c3-bbe2-769f-953b-64175bbdc2ae",
+      "id": "01a1496d-521c-7aed-96dc-ce7b36696ede",
+      "payload": {
+        "kind": "event",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "actor": "01a1496d-521b-737e-b426-a7ce775464b5",
+          "action": "hugged",
+          "actionType": "hug",
+          "objects": [],
+          "affected": [
+            "01a1496d-521a-7ccf-9109-9124cf17f45c"
+          ],
+          "role": "affected",
+          "occurredAt": "2026-10-17T08:00:00Z",
+          "systemId": "01a1496d-521a-7f4d-9073-5ea66a3e1aff",
+          "status": "confirmed",
+          "stamps": [],
+          "rulings": []
+        }
+      }
+    },
+    {
+      "id": "01a1496d-521c-71c4-8588-80a6baad375c",
       "payload": {
         "kind": "assessment",
         "createdAt": "2026-10-17T09:05:00Z",
         "supersedes": null,
         "source": "manual",
         "body": {
-          "exchangeId": "01a146c3-bbe1-79be-9379-5f0c81260558",
-          "elementRef": {
-            "exchangeId": "01a146c3-bbe1-79be-9379-5f0c81260558",
-            "side": "received",
-            "index": 0
-          },
-          "phase": "received",
+          "eventId": "01a1496d-521c-7aed-96dc-ce7b36696ede",
+          "phase": "realized",
           "gained": [
-            "I finally started the letter"
+            "Warmth",
+            "She was not in a hurry"
           ],
           "lost": [],
-          "ownScore": {
-            "value": 1000000,
-            "unit": "points"
-          },
           "contributions": [
             {
-              "goalId": "01a146c3-bbe1-7b29-8ef9-87cfe7f702bc",
-              "c": 60000
+              "goalId": "01a1496d-521b-764a-a4f2-8281e22d0a9d",
+              "k": 0.05
             }
           ],
-          "v": 0.15,
-          "confidence": "medium",
-          "reasons": "Without a pen at hand I kept postponing it."
-        }
-      }
-    },
-    {
-      "id": "01a146c3-bbe2-7721-bf21-91214befdbae",
-      "payload": {
-        "kind": "exchange",
-        "createdAt": "2026-10-17T09:05:00Z",
-        "supersedes": null,
-        "source": "manual",
-        "body": {
-          "counterpartyId": "01a146c3-bbe1-7ab4-b6d5-d0ef55888881",
-          "given": [
-            {
-              "label": "20 minutes of reading",
-              "quantity": 20,
-              "unit": "min"
-            }
-          ],
-          "received": [
-            {
-              "label": "How to Assess Value (research)",
-              "typeId": "01a146c3-bbe1-7734-a9cc-f31cd74f07c9"
-            }
-          ],
-          "occurredAt": "2026-10-15",
-          "status": "recorded"
-        }
-      }
-    },
-    {
-      "id": "01a146c3-bbe2-76e7-874a-d2a241969cb5",
-      "payload": {
-        "kind": "plan",
-        "createdAt": "2026-10-17T09:05:00Z",
-        "supersedes": null,
-        "source": "profile",
-        "body": {
-          "exchangeId": "01a146c3-bbe2-7721-bf21-91214befdbae",
-          "elementRef": {
-            "exchangeId": "01a146c3-bbe2-7721-bf21-91214befdbae",
-            "side": "received",
-            "index": 0
-          },
-          "authorCounterpartyId": "01a146c3-bbe1-7ab4-b6d5-d0ef55888881",
-          "promise": "A method you can apply to a real decision this week",
-          "goalCategory": "decisions",
-          "plannedV": 0.05,
-          "profileRef": "https://aeilus.institute/vledger/profile.json#value-assessment-methodology"
-        }
-      }
-    },
-    {
-      "id": "01a146c3-bbe2-7b9c-a0e8-1767b39ab758",
-      "payload": {
-        "kind": "assessment",
-        "createdAt": "2026-10-17T09:05:00Z",
-        "supersedes": null,
-        "source": "manual",
-        "body": {
-          "exchangeId": "01a146c3-bbe2-7721-bf21-91214befdbae",
-          "elementRef": {
-            "exchangeId": "01a146c3-bbe2-7721-bf21-91214befdbae",
-            "side": "received",
-            "index": 0
-          },
-          "phase": "received",
-          "gained": [
-            "A clear checklist"
-          ],
-          "lost": [
-            "20 minutes"
-          ],
-          "contributions": [
-            {
-              "goalId": "01a146c3-bbe1-792d-85f7-19c9213761bb",
-              "k": 0.01
-            }
-          ],
-          "v": 0.005,
-          "planCount": 0,
-          "confidence": "low"
-        }
-      }
-    },
-    {
-      "id": "01a146c3-bbe2-7391-96b0-2b2f419d7166",
-      "payload": {
-        "kind": "exchange",
-        "createdAt": "2026-10-17T09:05:00Z",
-        "supersedes": null,
-        "source": "manual",
-        "body": {
-          "counterpartyId": "01a146c3-bbe1-715f-b5f7-38eede807aab",
-          "given": [
-            {
-              "label": "Fee",
-              "typeId": "01a146c3-bbe1-7ba2-be9d-939301f98a9a",
-              "quantity": 20,
-              "unit": "EUR"
-            }
-          ],
-          "received": [
-            {
-              "label": "Waste collection permit",
-              "typeId": "01a146c3-bbe1-7ba2-be9d-939301f98a9a"
-            }
-          ],
-          "occurredAt": "2026-10-10",
-          "status": "recorded"
-        }
-      }
-    },
-    {
-      "id": "01a146c3-bbe2-7c7c-acda-2841d63be782",
-      "payload": {
-        "kind": "assessment",
-        "createdAt": "2026-10-17T09:05:00Z",
-        "supersedes": null,
-        "source": "manual",
-        "body": {
-          "exchangeId": "01a146c3-bbe2-7391-96b0-2b2f419d7166",
-          "elementRef": {
-            "exchangeId": "01a146c3-bbe2-7391-96b0-2b2f419d7166",
-            "side": "received",
-            "index": 0
-          },
-          "phase": "received",
-          "gained": [
-            "Permit received"
-          ],
-          "lost": [
-            "Three visits",
-            "A lost evening of study"
-          ],
-          "contributions": [
-            {
-              "goalId": "01a146c3-bbe1-792d-85f7-19c9213761bb",
-              "c": -50000
-            }
-          ],
-          "v": -0.025,
+          "spent": [],
+          "v": 0.016666666666666666,
+          "spentV": 0,
+          "reference": true,
           "confidence": "high"
         }
       }
     },
     {
-      "id": "01a146c3-bbe2-70a3-90cf-783e68ae24aa",
+      "id": "01a1496d-521c-7fea-bc0b-41d77696077c",
+      "payload": {
+        "kind": "event",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "actor": "01a1496d-521a-7ccf-9109-9124cf17f45c",
+          "action": "bought",
+          "actionType": "buy",
+          "objects": [
+            {
+              "label": "Toothpaste",
+              "quantity": 1,
+              "unit": "tube"
+            }
+          ],
+          "affected": [
+            "01a1496d-521b-78f2-96fc-ea63669488ce"
+          ],
+          "role": "actor",
+          "occurredAt": "2026-10-10",
+          "status": "confirmed",
+          "stamps": [],
+          "rulings": []
+        }
+      }
+    },
+    {
+      "id": "01a1496d-521c-7594-b64b-333fda2c34cd",
+      "payload": {
+        "kind": "plan",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "eventId": "01a1496d-521c-7fea-bc0b-41d77696077c",
+          "objectIndex": 0,
+          "author": "01a1496d-521b-75e3-8a9f-266e43a5b803",
+          "promise": "Protects enamel for 12 hours",
+          "plannedV": 0.002
+        }
+      }
+    },
+    {
+      "id": "01a1496d-521c-7b9a-8cbc-43665fd43724",
+      "payload": {
+        "kind": "assessment",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "eventId": "01a1496d-521c-7fea-bc0b-41d77696077c",
+          "objectIndex": 0,
+          "phase": "realized",
+          "gained": [
+            "Fresh taste"
+          ],
+          "lost": [
+            "A little money"
+          ],
+          "contributions": [
+            {
+              "goalId": "01a1496d-521b-7de5-874c-fcbd74b417b0",
+              "k": 0.02
+            }
+          ],
+          "spent": [
+            {
+              "goalId": "01a1496d-521b-7f51-b0f2-6ab633cf944c",
+              "k": 0.001
+            }
+          ],
+          "v": 0.006666666666666666,
+          "spentV": 0.00016666666666666666,
+          "planCount": 0,
+          "reference": false,
+          "confidence": "medium"
+        }
+      }
+    },
+    {
+      "id": "01a1496d-521d-7d53-ae87-e58080379ad0",
+      "payload": {
+        "kind": "event",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "registry",
+        "body": {
+          "actor": "01a1496d-521a-7ccf-9109-9124cf17f45c",
+          "action": "walk on",
+          "actionType": "use",
+          "objects": [
+            {
+              "label": "Road along the river"
+            }
+          ],
+          "affected": [],
+          "role": "user",
+          "occurredAt": "2026-10-16",
+          "systemId": "01a1496d-521a-7f2d-9171-3b75c78b8678",
+          "registryRef": {
+            "registryUrl": "https://example-municipality.test/vledger/registry.json",
+            "itemId": "road-17",
+            "owner": "vw1:rmjX7JWMjF5KYhnhX6i9dA-szPgZRtrgl_IjCHE_UAQ"
+          },
+          "status": "confirmed",
+          "stamps": [],
+          "rulings": []
+        }
+      }
+    },
+    {
+      "id": "01a1496d-521d-741d-ab88-26f26e474699",
+      "payload": {
+        "kind": "plan",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "registry",
+        "body": {
+          "eventId": "01a1496d-521d-7d53-ae87-e58080379ad0",
+          "objectIndex": 0,
+          "author": "01a1496d-521b-7524-990e-a6a8d99c70fa",
+          "promise": "A safe walk to the centre in 15 minutes",
+          "plannedV": 0.01,
+          "registryRef": {
+            "registryUrl": "https://example-municipality.test/vledger/registry.json",
+            "itemId": "road-17",
+            "owner": "vw1:rmjX7JWMjF5KYhnhX6i9dA-szPgZRtrgl_IjCHE_UAQ"
+          }
+        }
+      }
+    },
+    {
+      "id": "01a1496d-521d-7b4d-b9e7-e0b3de7394c5",
+      "payload": {
+        "kind": "assessment",
+        "createdAt": "2026-10-16T18:00:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "eventId": "01a1496d-521d-7d53-ae87-e58080379ad0",
+          "objectIndex": 0,
+          "phase": "realized",
+          "gained": [
+            "Quiet walk",
+            "Saw the river"
+          ],
+          "lost": [
+            "Mud at the bridge"
+          ],
+          "contributions": [
+            {
+              "goalId": "01a1496d-521b-7f51-b0f2-6ab633cf944c",
+              "k": 0.08
+            }
+          ],
+          "spent": [
+            {
+              "goalId": "01a1496d-521b-799f-b705-321c23df3eee",
+              "k": 0.01
+            }
+          ],
+          "v": 0.013333333333333332,
+          "spentV": 0.0016666666666666666,
+          "planCount": 0,
+          "reference": false,
+          "confidence": "medium"
+        }
+      }
+    },
+    {
+      "id": "01a1496d-521d-7419-8ad9-fafc5022b584",
+      "payload": {
+        "kind": "assessment",
+        "createdAt": "2026-10-17T10:00:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "eventId": "01a1496d-521d-7d53-ae87-e58080379ad0",
+          "objectIndex": 0,
+          "phase": "retro",
+          "gained": [
+            "I walk there every day now"
+          ],
+          "lost": [],
+          "contributions": [
+            {
+              "goalId": "01a1496d-521b-7f51-b0f2-6ab633cf944c",
+              "k": 0.1
+            }
+          ],
+          "spent": [
+            {
+              "goalId": "01a1496d-521b-799f-b705-321c23df3eee",
+              "k": 0.01
+            }
+          ],
+          "v": 0.016666666666666666,
+          "spentV": 0.0016666666666666666,
+          "reference": false,
+          "confidence": "high"
+        }
+      }
+    },
+    {
+      "id": "01a1496d-521e-7f3c-81fb-fa92fe85eaab",
+      "payload": {
+        "kind": "event",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "registry",
+        "body": {
+          "actor": "01a1496d-521b-7524-990e-a6a8d99c70fa",
+          "action": "built",
+          "actionType": "build",
+          "objects": [
+            {
+              "label": "Road along the river"
+            }
+          ],
+          "affected": [
+            "01a1496d-521a-7ccf-9109-9124cf17f45c"
+          ],
+          "role": "affected",
+          "occurredAt": "2026-09-01",
+          "systemId": "01a1496d-521a-7f2d-9171-3b75c78b8678",
+          "registryRef": {
+            "registryUrl": "https://example-municipality.test/vledger/registry.json",
+            "itemId": "built-road-17",
+            "owner": "vw1:rmjX7JWMjF5KYhnhX6i9dA-szPgZRtrgl_IjCHE_UAQ"
+          },
+          "status": "confirmed",
+          "stamps": [],
+          "rulings": []
+        }
+      }
+    },
+    {
+      "id": "01a1496d-521e-751d-88a4-2366ee875a3b",
+      "payload": {
+        "kind": "event",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "device",
+        "body": {
+          "actor": "01a1496d-521a-7ccf-9109-9124cf17f45c",
+          "action": "cooked",
+          "actionType": "cook",
+          "objects": [
+            {
+              "label": "Dinner for the family"
+            }
+          ],
+          "affected": [
+            "01a1496d-521b-737e-b426-a7ce775464b5"
+          ],
+          "role": "actor",
+          "occurredAt": "2026-10-17T19:00:00Z",
+          "systemId": "01a1496d-521a-7f4d-9073-5ea66a3e1aff",
+          "status": "suggested",
+          "suggestedBy": "01a1496d-521b-7991-ad9e-8d2de01ee598",
+          "stamps": [],
+          "rulings": []
+        }
+      }
+    },
+    {
+      "id": "01a1496d-521e-7649-bef2-2ae32bac3e93",
       "payload": {
         "kind": "fact",
-        "createdAt": "2026-10-17T09:30:00Z",
-        "supersedes": "01a146c3-bbe1-7d12-bdd3-b74488d6eee9",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
         "source": "manual",
         "body": {
           "topic": "family",
-          "text": "I wrote the first page of the letter.",
+          "text": "My daughter moves out next year.",
           "certainty": "high",
-          "exploring": false,
+          "exploring": true,
           "goalIds": [
-            "01a146c3-bbe1-7b29-8ef9-87cfe7f702bc"
+            "01a1496d-521b-764a-a4f2-8281e22d0a9d"
           ]
         }
       }
     },
     {
-      "id": "01a146c3-bbe2-740f-8dda-d5731a356948",
-      "payload": {
-        "kind": "note",
-        "createdAt": "2026-10-17T09:05:00Z",
-        "supersedes": null,
-        "source": "manual",
-        "body": {
-          "text": "Draft thoughts I do not want to keep."
-        }
-      }
-    },
-    {
-      "id": "01a146c3-bbe2-7e5a-b0cd-c7e92e9fc50f",
-      "payload": {
-        "kind": "note",
-        "createdAt": "2026-10-17T09:05:00Z",
-        "supersedes": "01a146c3-bbe2-740f-8dda-d5731a356948",
-        "source": "manual",
-        "body": {
-          "withdrawn": true
-        }
-      }
-    },
-    {
-      "id": "01a146c3-bbe2-7dc0-8db0-5fbb97c358fc",
+      "id": "01a1496d-521e-7157-9ad4-16c3e948ec86",
       "payload": null
     }
   ],
-  "values": [
+  "systems": [
     {
-      "assessmentOf": "01a146c3-bbe1-79be-9379-5f0c81260558",
-      "contributions": [
-        {
-          "goalId": "01a146c3-bbe1-7b29-8ef9-87cfe7f702bc",
-          "c": 60000
-        }
-      ],
-      "v": 0.15
+      "id": "01a1496d-521a-7f4d-9073-5ea66a3e1aff",
+      "W": 3,
+      "status": "active"
     },
     {
-      "assessmentOf": "01a146c3-bbe2-7721-bf21-91214befdbae",
-      "contributions": [
-        {
-          "goalId": "01a146c3-bbe1-792d-85f7-19c9213761bb",
-          "k": 0.01
-        }
-      ],
-      "v": 0.005
-    },
-    {
-      "assessmentOf": "01a146c3-bbe2-7391-96b0-2b2f419d7166",
-      "contributions": [
-        {
-          "goalId": "01a146c3-bbe1-792d-85f7-19c9213761bb",
-          "c": -50000
-        }
-      ],
-      "v": -0.025
+      "id": "01a1496d-521a-7f2d-9171-3b75c78b8678",
+      "W": 1,
+      "status": "active"
     }
   ],
   "goals": [
     {
-      "id": "01a146c3-bbe1-7b29-8ef9-87cfe7f702bc",
-      "S": 1000000,
-      "N": 200000,
+      "id": "01a1496d-521b-764a-a4f2-8281e22d0a9d",
+      "systemId": "01a1496d-521a-7f4d-9073-5ea66a3e1aff",
+      "S": 2,
       "status": "active"
     },
     {
-      "id": "01a146c3-bbe1-792d-85f7-19c9213761bb",
-      "S": 1000000,
-      "N": 1000000,
+      "id": "01a1496d-521b-799f-b705-321c23df3eee",
+      "systemId": "01a1496d-521a-7f4d-9073-5ea66a3e1aff",
+      "S": 1,
+      "N": 1,
+      "status": "active"
+    },
+    {
+      "id": "01a1496d-521b-7de5-874c-fcbd74b417b0",
+      "S": 1,
+      "status": "active"
+    },
+    {
+      "id": "01a1496d-521b-7f51-b0f2-6ab633cf944c",
+      "systemId": "01a1496d-521a-7f2d-9171-3b75c78b8678",
+      "S": 1,
       "status": "active"
     }
+  ],
+  "values": [
+    {
+      "event": "e1 hug",
+      "contributions": [
+        {
+          "goalId": "01a1496d-521b-764a-a4f2-8281e22d0a9d",
+          "k": 0.05
+        }
+      ],
+      "spent": [],
+      "v": 0.016666666666666666,
+      "spentV": 0
+    },
+    {
+      "event": "e2 toothpaste",
+      "contributions": [
+        {
+          "goalId": "01a1496d-521b-7de5-874c-fcbd74b417b0",
+          "k": 0.02
+        }
+      ],
+      "spent": [
+        {
+          "goalId": "01a1496d-521b-7f51-b0f2-6ab633cf944c",
+          "k": 0.001
+        }
+      ],
+      "v": 0.006666666666666666,
+      "spentV": 0.00016666666666666666,
+      "efficiency": 40
+    },
+    {
+      "event": "e3 road realized",
+      "contributions": [
+        {
+          "goalId": "01a1496d-521b-7f51-b0f2-6ab633cf944c",
+          "k": 0.08
+        }
+      ],
+      "spent": [
+        {
+          "goalId": "01a1496d-521b-799f-b705-321c23df3eee",
+          "k": 0.01
+        }
+      ],
+      "v": 0.013333333333333332,
+      "spentV": 0.0016666666666666666,
+      "efficiency": 8
+    },
+    {
+      "event": "e3 road retro",
+      "contributions": [
+        {
+          "goalId": "01a1496d-521b-7f51-b0f2-6ab633cf944c",
+          "k": 0.1
+        }
+      ],
+      "spent": [
+        {
+          "goalId": "01a1496d-521b-799f-b705-321c23df3eee",
+          "k": 0.01
+        }
+      ],
+      "v": 0.016666666666666666,
+      "spentV": 0.0016666666666666666
+    }
+  ],
+  "analytics": {
+    "bySystem": {
+      "01a1496d-521a-7f4d-9073-5ea66a3e1aff": {
+        "events": 1,
+        "assessed": 1,
+        "v": 0.016666666666666666,
+        "spentV": 0,
+        "efficiency": null
+      },
+      "none": {
+        "events": 1,
+        "assessed": 1,
+        "v": 0.006666666666666666,
+        "spentV": 0.00016666666666666666,
+        "efficiency": 40
+      },
+      "01a1496d-521a-7f2d-9171-3b75c78b8678": {
+        "events": 2,
+        "assessed": 1,
+        "v": 0.016666666666666666,
+        "spentV": 0.0016666666666666666,
+        "efficiency": 10
+      }
+    },
+    "byContact": {
+      "01a1496d-521b-737e-b426-a7ce775464b5": {
+        "events": 1,
+        "assessed": 1,
+        "v": 0.016666666666666666,
+        "spentV": 0,
+        "efficiency": null
+      },
+      "01a1496d-521b-78f2-96fc-ea63669488ce": {
+        "events": 1,
+        "assessed": 1,
+        "v": 0.006666666666666666,
+        "spentV": 0.00016666666666666666,
+        "efficiency": 40
+      },
+      "01a1496d-521a-7ccf-9109-9124cf17f45c": {
+        "events": 1,
+        "assessed": 1,
+        "v": 0.016666666666666666,
+        "spentV": 0.0016666666666666666,
+        "efficiency": 10
+      },
+      "01a1496d-521b-7524-990e-a6a8d99c70fa": {
+        "events": 1,
+        "assessed": 0,
+        "v": 0,
+        "spentV": 0,
+        "efficiency": null
+      }
+    },
+    "byAction": {
+      "hug": {
+        "events": 1,
+        "assessed": 1,
+        "v": 0.016666666666666666,
+        "spentV": 0,
+        "efficiency": null
+      },
+      "buy": {
+        "events": 1,
+        "assessed": 1,
+        "v": 0.006666666666666666,
+        "spentV": 0.00016666666666666666,
+        "efficiency": 40
+      },
+      "use": {
+        "events": 1,
+        "assessed": 1,
+        "v": 0.016666666666666666,
+        "spentV": 0.0016666666666666666,
+        "efficiency": 10
+      },
+      "build": {
+        "events": 1,
+        "assessed": 0,
+        "v": 0,
+        "spentV": 0,
+        "efficiency": null
+      }
+    },
+    "byRole": {
+      "affected": {
+        "events": 2,
+        "assessed": 1,
+        "v": 0.016666666666666666,
+        "spentV": 0,
+        "efficiency": null
+      },
+      "actor": {
+        "events": 1,
+        "assessed": 1,
+        "v": 0.006666666666666666,
+        "spentV": 0.00016666666666666666,
+        "efficiency": 40
+      },
+      "user": {
+        "events": 1,
+        "assessed": 1,
+        "v": 0.016666666666666666,
+        "spentV": 0.0016666666666666666,
+        "efficiency": 10
+      }
+    },
+    "total": {
+      "all": {
+        "events": 4,
+        "assessed": 3,
+        "v": 0.039999999999999994,
+        "spentV": 0.0018333333333333333,
+        "efficiency": 21.818181818181817
+      }
+    }
+  },
+  "suggested": [
+    "01a1496d-521e-751d-88a4-2366ee875a3b"
+  ],
+  "unassessed": [
+    "01a1496d-521e-7f3c-81fb-fa92fe85eaab"
   ]
 }

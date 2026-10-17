@@ -1,9 +1,51 @@
 {
   "format": "aevri.vledger",
-  "version": "1.0",
-  "generatedAt": "2026-10-16T22:09:55Z",
+  "version": "1.0-d2",
+  "generatedAt": "2026-10-17T10:34:23Z",
   "note": "Test data only. Passphrases and private keys here are public.",
   "fixtures": [
+    {
+      "file": "card-a.json",
+      "schema": "card.schema.json",
+      "expect": {
+        "signatureValid": true
+      }
+    },
+    {
+      "file": "card-b.json",
+      "schema": "card.schema.json",
+      "expect": {
+        "signatureValid": true
+      }
+    },
+    {
+      "file": "card-municipality.json",
+      "schema": "card.schema.json",
+      "expect": {
+        "signatureValid": true
+      }
+    },
+    {
+      "file": "card-maker.json",
+      "schema": "card.schema.json",
+      "expect": {
+        "signatureValid": true
+      }
+    },
+    {
+      "file": "invalid-card-tampered.json",
+      "schema": "card.schema.json",
+      "expect": {
+        "signatureValid": false
+      }
+    },
+    {
+      "file": "registry-municipality.json",
+      "schema": "registry.schema.json",
+      "expect": {
+        "signedByOwner": true
+      }
+    },
     {
       "file": "wallet-a.vledger.json",
       "schema": "wallet.schema.json",
@@ -11,16 +53,175 @@
         "chainProblems": 0,
         "opensWith": "wallet-a.plain.json",
         "erased": [
-          "01a146c3-bbe2-7dc0-8db0-5fbb97c358fc"
+          "01a1496d-521e-7157-9ad4-16c3e948ec86"
         ]
+      }
+    },
+    {
+      "file": "wallet-b.vledger.json",
+      "schema": "wallet.schema.json",
+      "expect": {
+        "chainProblems": 0,
+        "opensWith": "wallet-b.plain.json"
       }
     },
     {
       "file": "invalid-wallet-tampered.vledger.json",
       "schema": "wallet.schema.json",
       "expect": {
-        "chainProblems": 1,
-        "problemRecord": "01a146c3-bbe1-7ab4-b6d5-d0ef55888881"
+        "chainProblems": 1
+      }
+    },
+    {
+      "file": "message-share-to-daughter.json",
+      "schema": "message.schema.json",
+      "expect": {
+        "recipient": "wallet-b",
+        "from": "vw1:gAakZO0_RFoZ6h9iHDSYzV7dXInkcIZm2EwFLtipmT0",
+        "verified": true,
+        "body": {
+          "kind": "share",
+          "event": {
+            "actor": "Daughter",
+            "action": "hugged",
+            "objects": [],
+            "affected": [
+              "me"
+            ],
+            "occurredAt": "2026-10-17T08:00:00Z"
+          },
+          "phase": "realized",
+          "gained": [
+            "Warmth",
+            "She was not in a hurry"
+          ],
+          "lost": [],
+          "v": 0.016666666666666666,
+          "spentV": 0,
+          "publish": "no",
+          "system": "Family"
+        }
+      }
+    },
+    {
+      "file": "message-share-anonymous.json",
+      "schema": "message.schema.json",
+      "expect": {
+        "recipient": "maker (no wallet in fixtures)",
+        "from": null,
+        "verified": false
+      }
+    },
+    {
+      "file": "message-request-city.json",
+      "schema": "message.schema.json",
+      "expect": {
+        "recipient": "wallet-a",
+        "from": "vw1:rmjX7JWMjF5KYhnhX6i9dA-szPgZRtrgl_IjCHE_UAQ",
+        "verified": true,
+        "body": {
+          "kind": "request",
+          "event": {
+            "actor": "me",
+            "action": "walk on",
+            "objects": [
+              "Road along the river"
+            ],
+            "registryRef": {
+              "registryUrl": "https://example-municipality.test/vledger/registry.json",
+              "itemId": "road-17",
+              "owner": "vw1:rmjX7JWMjF5KYhnhX6i9dA-szPgZRtrgl_IjCHE_UAQ"
+            }
+          },
+          "system": "City",
+          "systemRegistryUrl": "https://example-municipality.test/vledger/registry.json",
+          "plan": {
+            "promise": "A safe walk to the centre in 15 minutes",
+            "plannedV": 0.01
+          }
+        },
+        "blocked": true
+      }
+    },
+    {
+      "file": "message-request-maker.json",
+      "schema": "message.schema.json",
+      "expect": {
+        "recipient": "wallet-a",
+        "from": "vw1:SKJVJB530SRuKvPPTQe8y_Q0NpjDz35xd6Y1RNuek3s",
+        "verified": true,
+        "body": {
+          "kind": "request",
+          "event": {
+            "actor": "me",
+            "action": "used",
+            "objects": [
+              "Toothpaste"
+            ]
+          },
+          "system": "Health",
+          "plan": {
+            "promise": "Protects enamel for 12 hours"
+          }
+        },
+        "blocked": false
+      }
+    },
+    {
+      "file": "message-suggestion.json",
+      "schema": "message.schema.json",
+      "expect": {
+        "recipient": "wallet-a",
+        "from": "vw1:WiXX5mUlfRGqB0S2iVxfrLum7ogDBgJWvhmZhSAjvgg",
+        "verified": true,
+        "body": {
+          "kind": "suggestion",
+          "source": "Home hub",
+          "events": [
+            {
+              "actor": "me",
+              "action": "cooked",
+              "objects": [
+                "Dinner for the family"
+              ],
+              "affected": [
+                "Daughter"
+              ],
+              "occurredAt": "2026-10-17T19:00:00Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "invalid-message-tampered-header.json",
+      "schema": "message.schema.json",
+      "expect": {
+        "recipient": "wallet-b",
+        "from": "vw1:gAakZO0_RFoZ6h9iHDSYzV7dXInkcIZm2EwFLtipmT0",
+        "verified": false,
+        "body": {
+          "kind": "share",
+          "event": {
+            "actor": "Daughter",
+            "action": "hugged",
+            "objects": [],
+            "affected": [
+              "me"
+            ],
+            "occurredAt": "2026-10-17T08:00:00Z"
+          },
+          "phase": "realized",
+          "gained": [
+            "Warmth",
+            "She was not in a hurry"
+          ],
+          "lost": [],
+          "v": 0.016666666666666666,
+          "spentV": 0,
+          "publish": "no",
+          "system": "Family"
+        }
       }
     },
     {
@@ -29,13 +230,10 @@
       "expect": {
         "matched": true,
         "binding": false,
-        "receiptDigest": "sha256:05d594483283fd99889fe8821ddbe50fe85c6b8e1552c2fbfc07064d975e9d6f",
-        "elementOpening": {
-          "salt": "tXwbCADCtA0QDC9Xc-Wpyw",
-          "label": "Ballpoint pen",
-          "quantity": 1,
-          "unit": null,
-          "note": null
+        "receiptDigest": "sha256:8e68480617d99ffe3506609cd74e95c56c0f6cde74045ea8d95cfbf1e083b224",
+        "actionOpening": {
+          "salt": "VSBN7feTBTQ9X9rOKpPwsA",
+          "text": "hugged"
         }
       }
     },
@@ -63,7 +261,7 @@
       "expect": {
         "matched": true,
         "binding": true,
-        "receiptDigest": "sha256:c2c728edab019f748de8fef43772235bbfc41e2b5b3ce4c1e8c690da3fdf2a01"
+        "receiptDigest": "sha256:b69fc044f181c9b73c31950c966470d596864d0a927bed0e3b56d08c566d0569"
       }
     },
     {
@@ -95,44 +293,12 @@
       "schema": "arbiter.schema.json#/$defs/ruling",
       "expect": {
         "signedBy": "arbiter",
-        "valid": true,
-        "mandateMatches": null
+        "valid": true
       }
     },
     {
       "file": "invalid-ruling-binding-without-mandate.json",
       "schema": "arbiter.schema.json#/$defs/ruling",
-      "expect": {
-        "schemaValid": false
-      }
-    },
-    {
-      "file": "profile-aevri.json",
-      "schema": "profile.schema.json",
-      "expect": {
-        "signedBy": "profile.key",
-        "valid": true
-      }
-    },
-    {
-      "file": "feedback-anonymous.json",
-      "schema": "feedback.schema.json",
-      "expect": {
-        "schemaValid": true
-      }
-    },
-    {
-      "file": "feedback-named.json",
-      "schema": "feedback.schema.json",
-      "expect": {
-        "schemaValid": true,
-        "signedBy": "from",
-        "valid": true
-      }
-    },
-    {
-      "file": "invalid-feedback-anonymous-with-key.json",
-      "schema": "feedback.schema.json",
       "expect": {
         "schemaValid": false
       }

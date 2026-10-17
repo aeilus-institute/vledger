@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aeilus.institute/schema/vledger/1/registry.schema.json",
+  "title": "aevri.vledger 1.0-d2 signed registry of objects and events",
+  "type": "object",
+  "required": [
+    "registry",
+    "sig"
+  ],
+  "properties": {
+    "registry": {
+      "type": "object",
+      "required": [
+        "type",
+        "version",
+        "registryUrl",
+        "owner",
+        "updatedAt",
+        "systems",
+        "items"
+      ],
+      "properties": {
+        "type": {
+          "const": "aevri.vledger.registry"
+        },
+        "version": {
+          "const": 1
+        },
+        "registryUrl": {
+          "type": "string",
+          "pattern": "^https://"
+        },
+        "owner": {
+          "$ref": "card.schema.json"
+        },
+        "updatedAt": {
+          "$ref": "common.schema.json#/$defs/time"
+        },
+        "systems": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "systemId",
+              "title"
+            ],
+            "properties": {
+              "systemId": {
+                "type": "string",
+                "maxLength": 60
+              },
+              "title": {
+                "$ref": "common.schema.json#/$defs/line"
+              },
+              "note": {
+                "$ref": "common.schema.json#/$defs/text"
+              }
+            }
+          }
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "itemId",
+              "kind",
+              "title",
+              "system"
+            ],
+            "properties": {
+              "itemId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9._-]{1,100}$"
+              },
+              "kind": {
+                "enum": [
+                  "object",
+                  "event"
+                ]
+              },
+              "title": {
+                "$ref": "common.schema.json#/$defs/line"
+              },
+              "system": {
+                "type": "string",
+                "maxLength": 60
+              },
+              "category": {
+                "enum": [
+                  "thing",
+                  "service",
+                  "information",
+                  "time",
+                  "money",
+                  "right",
+                  "decision",
+                  "relation",
+                  "action",
+                  "other"
+                ]
+              },
+              "actions": {
+                "type": "array",
+                "items": {
+                  "$ref": "common.schema.json#/$defs/line"
+                }
+              },
+              "affects": {
+                "$ref": "common.schema.json#/$defs/text"
+              },
+              "occurredAt": {
+                "oneOf": [
+                  {
+                    "$ref": "common.schema.json#/$defs/time"
+                  },
+                  {
+                    "$ref": "common.schema.json#/$defs/date"
+                  }
+                ]
+              },
+              "plan": {
+                "type": "object",
+                "required": [
+                  "promise"
+                ],
+                "properties": {
+                  "promise": {
+                    "$ref": "common.schema.json#/$defs/text"
+                  },
+                  "plannedV": {
+                    "type": "number",
+                    "minimum": -1,
+                    "maximum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "system",
+              "phrase",
+              "v"
+            ],
+            "properties": {
+              "system": {
+                "type": "string",
+                "maxLength": 60
+              },
+              "phrase": {
+                "$ref": "common.schema.json#/$defs/line"
+              },
+              "v": {
+                "type": "number"
+              },
+              "words": {
+                "$ref": "common.schema.json#/$defs/text"
+              }
+            }
+          }
+        }
+      }
+    },
+    "sig": {
+      "$ref": "common.schema.json#/$defs/b64u"
+    }
+  }
+}

@@ -1,258 +1,272 @@
 {
   "cases": [
     {
-      "name": "pen for the letter",
-      "goals": [
+      "name": "TZ v0.3 AT-4: systems 3 and 1, 30% of the only goal of the first, spent 20% of the only goal of the second",
+      "systems": [
         {
-          "id": "01a146c3-bbe1-7b29-8ef9-87cfe7f702bc",
-          "S": 1000000,
-          "N": 200000,
+          "id": "s1",
+          "W": 3,
           "status": "active"
         },
         {
-          "id": "01a146c3-bbe1-792d-85f7-19c9213761bb",
-          "S": 1000000,
-          "N": 1000000,
+          "id": "s2",
+          "W": 1,
+          "status": "active"
+        }
+      ],
+      "goals": [
+        {
+          "id": "g1",
+          "systemId": "s1",
+          "S": 10,
+          "status": "active"
+        },
+        {
+          "id": "g2",
+          "systemId": "s2",
+          "S": 5,
           "status": "active"
         }
       ],
       "contributions": [
         {
-          "goalId": "01a146c3-bbe1-7b29-8ef9-87cfe7f702bc",
-          "c": 60000
+          "goalId": "g1",
+          "k": 0.3
+        }
+      ],
+      "spent": [
+        {
+          "goalId": "g2",
+          "k": 0.2
         }
       ],
       "expect": {
-        "v": 0.15,
+        "v": 0.22499999999999998,
         "parts": [
           {
-            "goalId": "01a146c3-bbe1-7b29-8ef9-87cfe7f702bc",
+            "goalId": "g1",
             "k": 0.3,
-            "w": 0.5,
-            "wk": 0.15
+            "w": 0.75,
+            "wk": 0.22499999999999998
           }
-        ]
-      }
-    },
-    {
-      "name": "research as a share",
-      "goals": [
-        {
-          "id": "01a146c3-bbe1-7b29-8ef9-87cfe7f702bc",
-          "S": 1000000,
-          "N": 200000,
-          "status": "active"
-        },
-        {
-          "id": "01a146c3-bbe1-792d-85f7-19c9213761bb",
-          "S": 1000000,
-          "N": 1000000,
-          "status": "active"
-        }
-      ],
-      "contributions": [
-        {
-          "goalId": "01a146c3-bbe1-792d-85f7-19c9213761bb",
-          "k": 0.01
-        }
-      ],
-      "expect": {
-        "v": 0.005,
-        "parts": [
+        ],
+        "spentV": 0.05,
+        "spentParts": [
           {
-            "goalId": "01a146c3-bbe1-792d-85f7-19c9213761bb",
-            "k": 0.01,
-            "w": 0.5,
-            "wk": 0.005
-          }
-        ]
-      }
-    },
-    {
-      "name": "harm to a goal",
-      "goals": [
-        {
-          "id": "01a146c3-bbe1-7b29-8ef9-87cfe7f702bc",
-          "S": 1000000,
-          "N": 200000,
-          "status": "active"
-        },
-        {
-          "id": "01a146c3-bbe1-792d-85f7-19c9213761bb",
-          "S": 1000000,
-          "N": 1000000,
-          "status": "active"
-        }
-      ],
-      "contributions": [
-        {
-          "goalId": "01a146c3-bbe1-792d-85f7-19c9213761bb",
-          "c": -50000
-        }
-      ],
-      "expect": {
-        "v": -0.025,
-        "parts": [
-          {
-            "goalId": "01a146c3-bbe1-792d-85f7-19c9213761bb",
-            "k": -0.05,
-            "w": 0.5,
-            "wk": -0.025
-          }
-        ]
-      }
-    },
-    {
-      "name": "two goals at once",
-      "goals": [
-        {
-          "id": "01a146c3-bbe1-7b29-8ef9-87cfe7f702bc",
-          "S": 1000000,
-          "N": 200000,
-          "status": "active"
-        },
-        {
-          "id": "01a146c3-bbe1-792d-85f7-19c9213761bb",
-          "S": 1000000,
-          "N": 1000000,
-          "status": "active"
-        }
-      ],
-      "contributions": [
-        {
-          "goalId": "01a146c3-bbe1-7b29-8ef9-87cfe7f702bc",
-          "c": 20000
-        },
-        {
-          "goalId": "01a146c3-bbe1-792d-85f7-19c9213761bb",
-          "c": 100000
-        }
-      ],
-      "expect": {
-        "v": 0.1,
-        "parts": [
-          {
-            "goalId": "01a146c3-bbe1-7b29-8ef9-87cfe7f702bc",
-            "k": 0.1,
-            "w": 0.5,
-            "wk": 0.05
-          },
-          {
-            "goalId": "01a146c3-bbe1-792d-85f7-19c9213761bb",
-            "k": 0.1,
-            "w": 0.5,
+            "goalId": "g2",
+            "k": 0.2,
+            "w": 0.25,
             "wk": 0.05
           }
-        ]
+        ],
+        "efficiency": 4.499999999999999,
+        "net": 0.175
       }
     },
     {
-      "name": "dropped goal counts 0",
-      "goals": [
+      "name": "goal without a system goes to Other (mean W)",
+      "systems": [
         {
-          "id": "01a146c3-bbe1-7b29-8ef9-87cfe7f702bc",
-          "S": 1000000,
-          "N": 200000,
+          "id": "s1",
+          "W": 3,
           "status": "active"
         },
         {
-          "id": "01a146c3-bbe1-792d-85f7-19c9213761bb",
-          "S": 1000000,
-          "N": 1000000,
+          "id": "s2",
+          "W": 1,
+          "status": "active"
+        }
+      ],
+      "goals": [
+        {
+          "id": "g1",
+          "systemId": "s1",
+          "S": 10,
+          "status": "active"
+        },
+        {
+          "id": "g2",
+          "systemId": "s2",
+          "S": 5,
+          "status": "active"
+        },
+        {
+          "id": "g3",
+          "S": 1,
+          "status": "active"
+        }
+      ],
+      "contributions": [
+        {
+          "goalId": "g3",
+          "k": 1
+        }
+      ],
+      "spent": [],
+      "expect": {
+        "v": 0.3333333333333333,
+        "parts": [
+          {
+            "goalId": "g3",
+            "k": 1,
+            "w": 0.3333333333333333,
+            "wk": 0.3333333333333333
+          }
+        ],
+        "spentV": 0,
+        "spentParts": [],
+        "efficiency": null,
+        "net": 0.3333333333333333
+      }
+    },
+    {
+      "name": "no systems at all",
+      "systems": [],
+      "goals": [
+        {
+          "id": "a",
+          "S": 1,
+          "status": "active"
+        },
+        {
+          "id": "b",
+          "S": 3,
+          "status": "active"
+        }
+      ],
+      "contributions": [
+        {
+          "goalId": "b",
+          "c": 1.5
+        }
+      ],
+      "spent": [],
+      "expect": {
+        "v": 0.375,
+        "parts": [
+          {
+            "goalId": "b",
+            "k": 0.5,
+            "w": 0.75,
+            "wk": 0.375
+          }
+        ],
+        "spentV": 0,
+        "spentParts": [],
+        "efficiency": null,
+        "net": 0.375
+      }
+    },
+    {
+      "name": "goals of a dropped system weigh 0",
+      "systems": [
+        {
+          "id": "s1",
+          "W": 3,
           "status": "dropped"
+        },
+        {
+          "id": "s2",
+          "W": 1,
+          "status": "active"
+        }
+      ],
+      "goals": [
+        {
+          "id": "g1",
+          "systemId": "s1",
+          "S": 10,
+          "status": "active"
+        },
+        {
+          "id": "g2",
+          "systemId": "s2",
+          "S": 5,
+          "status": "active"
         }
       ],
       "contributions": [
         {
-          "goalId": "01a146c3-bbe1-792d-85f7-19c9213761bb",
-          "c": 500000
+          "goalId": "g1",
+          "k": 0.5
         }
       ],
+      "spent": [],
       "expect": {
         "v": 0,
-        "parts": []
+        "parts": [
+          {
+            "goalId": "g1",
+            "k": 0.5,
+            "w": 0,
+            "wk": 0
+          }
+        ],
+        "spentV": 0,
+        "spentParts": [],
+        "efficiency": null,
+        "net": 0
       }
     }
   ],
-  "feelingChecks": {
-    "goals": [
+  "references": {
+    "refs": [
       {
-        "id": "g-a",
-        "S": 10,
-        "N": 10,
-        "status": "active"
+        "phrase": "A new pedestrian crossing near the school",
+        "v": 0.02
       },
       {
-        "id": "g-b",
-        "S": 1,
-        "N": 1,
-        "status": "active"
+        "phrase": "A hug from my daughter",
+        "v": 0.016666666666666666
       }
     ],
-    "assessments": [
+    "queries": [
       {
-        "at": "2026-10-01T00:00:00Z",
-        "v": 0.5,
-        "ownScore": {
-          "value": 1
-        },
-        "contributions": [
-          {
-            "goalId": "g-b",
-            "k": 0.6
-          }
-        ]
+        "v": 0.05,
+        "expect": {
+          "phrase": "A new pedestrian crossing near the school",
+          "v": 0.02,
+          "ratio": 2.5
+        }
       },
       {
-        "at": "2026-10-02T00:00:00Z",
-        "v": 0.4,
-        "ownScore": {
-          "value": 2
-        },
-        "contributions": [
-          {
-            "goalId": "g-b",
-            "k": 0.6
-          }
-        ]
-      },
-      {
-        "at": "2026-10-03T00:00:00Z",
-        "v": 0.3,
-        "ownScore": {
-          "value": 3
-        },
-        "contributions": [
-          {
-            "goalId": "g-b",
-            "k": 0.1
-          }
-        ]
-      },
-      {
-        "at": "2026-10-04T00:00:00Z",
-        "v": 0.2,
-        "ownScore": {
-          "value": 4
-        },
-        "contributions": []
-      },
-      {
-        "at": "2026-10-05T00:00:00Z",
-        "v": 0.1,
-        "ownScore": {
-          "value": 5
-        },
-        "contributions": []
+        "v": 0.002,
+        "expect": {
+          "phrase": "A hug from my daughter",
+          "v": 0.016666666666666666,
+          "ratio": 0.12000000000000001
+        }
       }
-    ],
-    "now": "2026-10-17T00:00:00Z",
-    "expect": [
-      "goal-overfilled",
-      "scale-disagrees",
-      "top-goal-untouched"
     ]
   },
+  "retro": [
+    {
+      "assessments": [
+        {
+          "eventId": "x",
+          "phase": "realized"
+        }
+      ],
+      "eventId": "x",
+      "expect": true
+    },
+    {
+      "assessments": [
+        {
+          "eventId": "x",
+          "objectIndex": 0,
+          "phase": "realized"
+        }
+      ],
+      "eventId": "x",
+      "expect": false
+    },
+    {
+      "assessments": [],
+      "eventId": "x",
+      "expect": false
+    }
+  ],
   "planFactor": [
     {
       "settings": {
@@ -266,30 +280,210 @@
         "planCountDefault": 0,
         "planCountBy": [
           {
-            "counterpartyId": "01a146c3-bbe1-7ab4-b6d5-d0ef55888881",
+            "contactId": "m",
             "factor": 0.5
           }
         ]
       },
       "query": {
-        "counterpartyId": "01a146c3-bbe1-7ab4-b6d5-d0ef55888881"
+        "contactId": "m",
+        "systemId": "s"
       },
       "expect": 0.5
     },
     {
       "settings": {
-        "planCountDefault": 0.2,
+        "planCountDefault": 0.1,
         "planCountBy": [
           {
-            "counterpartyId": "01a146c3-bbe1-7ab4-b6d5-d0ef55888881",
-            "factor": 0.5
+            "systemId": "s",
+            "factor": 0.3
+          },
+          {
+            "contactId": "m",
+            "systemId": "s",
+            "factor": 0.9
           }
         ]
       },
       "query": {
-        "counterpartyId": "01a146c3-bbe1-715f-b5f7-38eede807aab"
+        "contactId": "m",
+        "systemId": "s"
       },
-      "expect": 0.2
+      "expect": 0.9
+    },
+    {
+      "settings": {
+        "planCountDefault": 0.1,
+        "planCountBy": [
+          {
+            "systemId": "s",
+            "factor": 0.3
+          }
+        ]
+      },
+      "query": {
+        "contactId": "x",
+        "systemId": "s"
+      },
+      "expect": 0.3
+    }
+  ],
+  "requestBlocking": [
+    {
+      "settings": {
+        "requests": {
+          "blockAll": true
+        }
+      },
+      "body": {
+        "kind": "request",
+        "event": {
+          "actor": "me",
+          "action": "used",
+          "objects": [
+            "Toothpaste"
+          ]
+        },
+        "system": "Health",
+        "plan": {
+          "promise": "Protects enamel for 12 hours"
+        }
+      },
+      "from": "vw1:SKJVJB530SRuKvPPTQe8y_Q0NpjDz35xd6Y1RNuek3s",
+      "expect": true,
+      "got": true
+    },
+    {
+      "settings": {
+        "requests": {
+          "blockSystems": [
+            "sys-city"
+          ]
+        }
+      },
+      "systems": [
+        {
+          "rootId": "sys-city",
+          "body": {
+            "title": "City",
+            "registryUrl": "https://example-municipality.test/vledger/registry.json"
+          }
+        }
+      ],
+      "body": {
+        "kind": "request",
+        "event": {
+          "actor": "me",
+          "action": "walk on",
+          "objects": [
+            "Road along the river"
+          ],
+          "registryRef": {
+            "registryUrl": "https://example-municipality.test/vledger/registry.json",
+            "itemId": "road-17",
+            "owner": "vw1:rmjX7JWMjF5KYhnhX6i9dA-szPgZRtrgl_IjCHE_UAQ"
+          }
+        },
+        "system": "City",
+        "systemRegistryUrl": "https://example-municipality.test/vledger/registry.json",
+        "plan": {
+          "promise": "A safe walk to the centre in 15 minutes",
+          "plannedV": 0.01
+        }
+      },
+      "from": "vw1:rmjX7JWMjF5KYhnhX6i9dA-szPgZRtrgl_IjCHE_UAQ",
+      "expect": true,
+      "got": true
+    },
+    {
+      "settings": {
+        "requests": {
+          "blockSystems": [
+            "sys-city"
+          ]
+        }
+      },
+      "systems": [
+        {
+          "rootId": "sys-city",
+          "body": {
+            "title": "City",
+            "registryUrl": "https://example-municipality.test/vledger/registry.json"
+          }
+        }
+      ],
+      "body": {
+        "kind": "request",
+        "event": {
+          "actor": "me",
+          "action": "used",
+          "objects": [
+            "Toothpaste"
+          ]
+        },
+        "system": "Health",
+        "plan": {
+          "promise": "Protects enamel for 12 hours"
+        }
+      },
+      "from": "vw1:SKJVJB530SRuKvPPTQe8y_Q0NpjDz35xd6Y1RNuek3s",
+      "expect": false,
+      "got": false
+    },
+    {
+      "settings": {
+        "requests": {
+          "blockContacts": [
+            "c-maker"
+          ]
+        }
+      },
+      "contacts": [
+        {
+          "rootId": "c-maker",
+          "body": {
+            "address": "vw1:SKJVJB530SRuKvPPTQe8y_Q0NpjDz35xd6Y1RNuek3s"
+          }
+        }
+      ],
+      "body": {
+        "kind": "request",
+        "event": {
+          "actor": "me",
+          "action": "used",
+          "objects": [
+            "Toothpaste"
+          ]
+        },
+        "system": "Health",
+        "plan": {
+          "promise": "Protects enamel for 12 hours"
+        }
+      },
+      "from": "vw1:SKJVJB530SRuKvPPTQe8y_Q0NpjDz35xd6Y1RNuek3s",
+      "expect": true,
+      "got": true
+    }
+  ],
+  "addresses": [
+    {
+      "text": "vw1:gAakZO0_RFoZ6h9iHDSYzV7dXInkcIZm2EwFLtipmT0",
+      "expect": {
+        "address": "vw1:gAakZO0_RFoZ6h9iHDSYzV7dXInkcIZm2EwFLtipmT0"
+      }
+    },
+    {
+      "text": "https://aeilus.institute/w/#vw1:rmjX7JWMjF5KYhnhX6i9dA-szPgZRtrgl_IjCHE_UAQ?n=Example+Municipality&k=state",
+      "expect": {
+        "address": "vw1:rmjX7JWMjF5KYhnhX6i9dA-szPgZRtrgl_IjCHE_UAQ",
+        "name": "Example Municipality",
+        "kind": "state"
+      }
+    },
+    {
+      "text": "not an address",
+      "expect": null
     }
   ]
 }

@@ -1,0 +1,21 @@
+{
+  "card": {
+    "type": "aevri.vledger.card",
+    "version": 1,
+    "address": "vw1:gAakZO0_RFoZ6h9iHDSYzV7dXInkcIZm2EwFLtipmT0",
+    "kind": "person",
+    "encKey": {
+      "kty": "EC",
+      "crv": "P-256",
+      "x": "jzOxvhD0Wd8yUjVAjjtutA6eJt4m0YdnTJmjUnK6y9U",
+      "y": "xOMfGFH6KcrcwyBsV2UXkKeGPpJOd0XhFmjcMfCXNIw"
+    },
+    "storage": {
+      "stores": false,
+      "publishes": "no"
+    },
+    "updatedAt": "2026-10-17T09:00:00Z",
+    "name": "Victor"
+  },
+  "sig": "i1zzPZkPGSclFslJzpYeoQ0pprKVQ1IqXq2eroIQP6hKAjgGZgwd9-UazsDklB--vLZazgI7Q-vmAdzjQeGJDw"
+}

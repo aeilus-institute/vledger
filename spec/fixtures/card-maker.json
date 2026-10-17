@@ -1,0 +1,23 @@
+{
+  "card": {
+    "type": "aevri.vledger.card",
+    "version": 1,
+    "address": "vw1:SKJVJB530SRuKvPPTQe8y_Q0NpjDz35xd6Y1RNuek3s",
+    "kind": "organization",
+    "encKey": {
+      "kty": "EC",
+      "crv": "P-256",
+      "x": "wBlqrB1DOyRyQe0jSqjWFOymp8wc7Ca8ZrfeLwNIzLg",
+      "y": "6yqkjZZdf8jd2E4jd-bo6WMi5utcZY9PhAtSvCKEEdI"
+    },
+    "storage": {
+      "stores": true,
+      "purpose": "Product improvement",
+      "retentionDays": 365,
+      "publishes": "anonymous"
+    },
+    "updatedAt": "2026-10-17T09:00:00Z",
+    "name": "Example Toothpaste Co"
+  },
+  "sig": "qU2ehHTCzESsyJ7jo7B0Bh8DAMTc3BFM8bdr5T9uuq5bDIYkOlzEdd6anNNDN2sUehA5aMGg1kFK5lbVxUHODg"
+}

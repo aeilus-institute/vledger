@@ -1,0 +1,49 @@
+{
+  "format": "aevri.vledger",
+  "version": "1.0",
+  "walletId": "01a1496d-505b-7f20-a07d-38b3fe24115c",
+  "createdAt": "2026-10-17T09:00:00Z",
+  "keyring": {
+    "revision": 1,
+    "slots": [
+      {
+        "id": "s1",
+        "kind": "passphrase",
+        "kdf": {
+          "name": "PBKDF2",
+          "hash": "SHA-256",
+          "iterations": 600000,
+          "salt": "njRoPZiayRqbR2YPZFwymQ"
+        },
+        "wrap": {
+          "iv": "1yvvmAnI6Pt44333",
+          "ct": "RwMpI0CRV-doluZWVgIEoxO0hsn0bjG5WIVoINBG-Jb_y446E72c6yXtdrp6VV7M"
+        }
+      }
+    ],
+    "identity": {
+      "publicKey": {
+        "alg": "Ed25519",
+        "x": "1orNr8BeFCs0Z-6sEFYSHTeB53tLZBrDtuY9ZYelSJQ"
+      },
+      "wrap": {
+        "iv": "z7oiLvcWbbqySPub",
+        "ct": "mO5xVt0o0LTjnONl4myRRIJzXllNQDgfBIAiXtUBd1BXs2WY8nciSIjiOWLy_kK_Y710hiw27P-q-MH3HESREg"
+      }
+    },
+    "exchange": {
+      "publicJwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "UhKsCmLJy3F1e0EhSCrW0O0Sv4f46_1euj_1RAnu3PU",
+        "y": "yzY9Jgzn_XN19bf3RTvYbMGslfciWRt8ZhXnBxT6evE"
+      },
+      "wrap": {
+        "iv": "1JZZDgbDDSywcWVT",
+        "ct": "qlVXTDqRvtTmxpvMFaipZrI_qMSmXjwDMwzv892XJnsd40M7z6phx3cNVrMLsm9zS_WspyM-cdGQE8jsfvUTJWIg5ZhfJQ9OYUl5ibEnWGVUFjbGf9EfgdhdwjMvJ0RulbsHIFTKEyBgw35bE_yNiHCkPE9SlBq1lhY6nkcDB-hJIATtDqGEwldunOkcmtc-Y3R1-BNOap-AgWer-xyIs8XrwJgMwwNPx0zY7mdVPaMSQylpwwIxppWJI98fAewXD5tbX1jqsSwUTpuVfQneri6QIe1fvGCj4b8bc0JnWd-vXA-s"
+      }
+    }
+  },
+  "records": [],
+  "extensions": {}
+}

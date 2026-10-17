@@ -1,0 +1,24 @@
+{
+  "card": {
+    "type": "aevri.vledger.card",
+    "version": 1,
+    "address": "vw1:rmjX7JWMjF5KYhnhX6i9dA-szPgZRtrgl_IjCHE_UAQ",
+    "kind": "state",
+    "encKey": {
+      "kty": "EC",
+      "crv": "P-256",
+      "x": "1qYqCle3YadMknMyR74x_PXiICVlGq2lG-zRYPSysRg",
+      "y": "InpADtXuLlLB3irI9vBREs_Mo0V46SRNn4WPB1ed7uQ"
+    },
+    "storage": {
+      "stores": true,
+      "purpose": "Analytics and improving roads",
+      "retentionDays": 730,
+      "publishes": "sender-choice"
+    },
+    "updatedAt": "2026-10-17T09:00:00Z",
+    "name": "Example Municipality",
+    "registryUrl": "https://example-municipality.test/vledger/registry.json"
+  },
+  "sig": "HAw0lWDZC3AcfSdJZrsHSB1sqr8LgLAgrnMTWEyh0byzd9AdzqiECS8JYIuNOCYs5eR0Kfs2kXoB8Y45ftPqAw"
+}

@@ -139,17 +139,19 @@ export async function createWallet(passphrase, { iterations, createdAt } = {}) {
   const kdf = newKdf(iterations);
   const kek = await deriveKek(passphrase, kdf);
   const id = await newIdentity();
+  const ex = await newExchangeKey();
   const doc = {
     format: FORMAT, version: VERSION, walletId, createdAt: created,
     keyring: {
       revision: 1,
       slots: [{ id: 's1', kind: 'passphrase', kdf, wrap: await seal(kek, dek, 'slot', walletId, 's1') }],
       identity: { publicKey: id.publicKey, wrap: await seal(dek, id.pkcs8, 'identity', walletId, 'identity') },
+      exchange: { publicJwk: ex.publicJwk, wrap: await seal(dek, te.encode(JSON.stringify(ex.privateJwk)), 'exchange', walletId, 'exchange') },
     },
     records: [],
     extensions: {},
   };
-  return { doc, session: { walletId, dek, signer: id.privateKey, publicKey: id.publicKey } };
+  return { doc, session: { walletId, dek, signer: id.privateKey, publicKey: id.publicKey, address: addressOf(id.publicKey), exchangePrivate: await importEcdhPrivate(ex.privateJwk), exchangePublicJwk: ex.publicJwk } };
 }
 
 export async function unlockWithPassphrase(doc, passphrase) {
@@ -165,7 +167,13 @@ export async function unlockWithPassphrase(doc, passphrase) {
 
 async function sessionFromDek(doc, dek) {
   const pkcs8 = await open(dek, doc.keyring.identity.wrap, 'identity', doc.walletId, 'identity');
-  return { walletId: doc.walletId, dek, signer: await importSigner(pkcs8), publicKey: doc.keyring.identity.publicKey };
+  const s = { walletId: doc.walletId, dek, signer: await importSigner(pkcs8), publicKey: doc.keyring.identity.publicKey, address: addressOf(doc.keyring.identity.publicKey) };
+  if (doc.keyring.exchange) {
+    const jwk = JSON.parse(td.decode(await open(dek, doc.keyring.exchange.wrap, 'exchange', doc.walletId, 'exchange')));
+    s.exchangePrivate = await importEcdhPrivate(jwk);
+    s.exchangePublicJwk = doc.keyring.exchange.publicJwk;
+  }
+  return s;
 }
 
 // Provider recovery slot (SPEC 4.4). providerPublicJwk: ECDH P-256 public JWK.
@@ -245,6 +253,9 @@ export async function elementDigest(el) {
   return hashJson({ salt: el.salt, label: el.label, quantity: el.quantity ?? null, unit: el.unit ?? null, note: el.note ?? null });
 }
 
+export const actionDigest = (a) => hashJson({ salt: a.salt, text: a.text });
+export const objectDigest = elementDigest;
+
 export const receiptDigest = (receipt) => hashJson(receipt);
 
 export async function signReceipt(bundle, party, session) {
@@ -291,3 +302,100 @@ export async function verifySigned(obj, pub) {
 }
 
 export { te, td };
+
+// ---- addresses, cards, messages (SPEC 3, 11) ----
+
+const pubJwk = ({ kty, crv, x, y }) => ({ kty, crv, x, y });
+
+export async function newExchangeKey() {
+  const kp = await subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  return { publicJwk: pubJwk(await subtle.exportKey('jwk', kp.publicKey)), privateJwk: await subtle.exportKey('jwk', kp.privateKey) };
+}
+
+export function importEcdhPrivate(jwk) {
+  return subtle.importKey('jwk', jwk, { name: 'ECDH', namedCurve: 'P-256' }, false, ['deriveBits']);
+}
+
+export const addressOf = (pub) => 'vw1:' + pub.x;
+export const keyOfAddress = (addr) => ({ alg: 'Ed25519', x: addr.slice(4) });
+const ADDR = /vw1:[A-Za-z0-9_-]{43}/;
+
+// Accepts a bare address or the link form https://aeilus.institute/w/#vw1:...?n=..&k=..
+export function parseAddress(text) {
+  const m = String(text || '').match(ADDR);
+  if (!m) return null;
+  const out = { address: m[0] };
+  const q = String(text).slice(m.index + m[0].length);
+  if (q.startsWith('?')) {
+    const p = new URLSearchParams(q.slice(1));
+    if (p.get('n')) out.name = p.get('n').slice(0, 300);
+    if (p.get('k')) out.kind = p.get('k');
+  }
+  return out;
+}
+
+export function addressLink(address, { name, kind } = {}) {
+  const p = new URLSearchParams();
+  if (name) p.set('n', name);
+  if (kind) p.set('k', kind);
+  const qs = p.toString();
+  return 'https://aeilus.institute/w/#' + address + (qs ? '?' + qs : '');
+}
+
+export async function makeCard(session, { kind = 'person', name, inbox, registryUrl, storage = { stores: false, publishes: 'no' }, updatedAt = nowIso() } = {}) {
+  const card = { type: 'aevri.vledger.card', version: 1, address: session.address, kind, encKey: session.exchangePublicJwk, storage, updatedAt };
+  if (name) card.name = name;
+  if (inbox) card.inbox = inbox;
+  if (registryUrl) card.registryUrl = registryUrl;
+  return { card, sig: await sign(session.signer, te.encode(canon(card))) };
+}
+
+export const verifyCard = (doc) => verify(keyOfAddress(doc.card.address), te.encode(canon(doc.card)), doc.sig);
+
+async function messageKey(sharedBits, id, to) {
+  const base = await subtle.importKey('raw', sharedBits, 'HKDF', false, ['deriveBits']);
+  return new Uint8Array(await subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(32), info: te.encode(`aevri.vledger/1|message|${id}|${to}`) }, base, 256));
+}
+
+// Encrypt `body` for the card's owner. `from` is a session (signed) or null (anonymous).
+export async function sealMessage(toCard, body, from = null, { id = uuid7(), sentAt = nowIso() } = {}) {
+  const to = toCard.card.address;
+  const recipient = await subtle.importKey('jwk', toCard.card.encKey, { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+  const eph = await subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const key = await messageKey(new Uint8Array(await subtle.deriveBits({ name: 'ECDH', public: recipient }, eph.privateKey, 256)), id, to);
+  const iv = rand(12);
+  const ct = await subtle.encrypt({ name: 'AES-GCM', iv, additionalData: te.encode(`aevri.vledger/1|message|${id}|${to}`) }, await aesKey(key), te.encode(canon(body)));
+  const msg = { type: 'aevri.vledger.message', version: 1, id, to, sentAt, epk: pubJwk(await subtle.exportKey('jwk', eph.publicKey)), iv: b64u(iv), ct: b64u(ct) };
+  if (from) {
+    msg.from = from.address;
+    msg.sig = await sign(from.signer, te.encode(canon(msg)));
+  }
+  return msg;
+}
+
+// Returns { body, from, verified }. Throws if the message is not for this session or does not decrypt.
+export async function openMessage(session, msg) {
+  if (msg.to !== session.address) throw new Error('message is for another wallet');
+  const epk = await subtle.importKey('jwk', msg.epk, { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+  const key = await messageKey(new Uint8Array(await subtle.deriveBits({ name: 'ECDH', public: epk }, session.exchangePrivate, 256)), msg.id, msg.to);
+  const pt = await subtle.decrypt({ name: 'AES-GCM', iv: unb64u(msg.iv), additionalData: te.encode(`aevri.vledger/1|message|${msg.id}|${msg.to}`) }, await aesKey(key), unb64u(msg.ct));
+  let verified = false;
+  if (msg.from && msg.sig) {
+    const { sig, ...rest } = msg;
+    verified = await verify(keyOfAddress(msg.from), te.encode(canon(rest)), sig);
+  }
+  return { body: JSON.parse(td.decode(pt)), from: msg.from || null, verified };
+}
+
+export const messageDigest = (msg) => hashJson(msg);
+
+// Request blocking (SPEC 11). settings.requests = {blockAll, blockSystems[], blockContacts[]};
+// contacts: [{rootId, body:{address}}], systems: [{rootId, body:{title, registryUrl}}]
+export function requestBlocked(settings, body, from, contacts = [], systems = []) {
+  const r = (settings && settings.requests) || {};
+  if (r.blockAll) return true;
+  if (from && (r.blockContacts || []).some((id) => contacts.find((c) => c.rootId === id)?.body.address === from)) return true;
+  const named = (r.blockSystems || []).map((id) => systems.find((x) => x.rootId === id)).filter(Boolean);
+  return named.some((x) => (body.systemRegistryUrl && x.body.registryUrl === body.systemRegistryUrl)
+    || (body.system && x.body.title.toLowerCase() === String(body.system).toLowerCase()));
+}

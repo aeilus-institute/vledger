@@ -1,50 +1,38 @@
 {
   "receipt": {
     "type": "aevri.vledger.receipt",
-    "version": 1,
-    "receiptId": "01a146c3-bcfa-7043-b850-9fc14663ef71",
-    "occurredAt": "2026-10-16T10:00:00Z",
+    "version": 2,
+    "receiptId": "01a1496d-540f-7208-9803-be277d6a5ecc",
+    "occurredAt": "2026-10-17T08:00:00Z",
     "parties": [
       {
-        "role": "giver",
+        "role": "actor",
         "key": {
           "alg": "Ed25519",
-          "x": "30C9yfNzNl5LQg7pUH_xGvaODP4doFBeLPel4wl9PDc"
+          "x": "1orNr8BeFCs0Z-6sEFYSHTeB53tLZBrDtuY9ZYelSJQ"
         },
-        "label": "Anna"
+        "label": "Daughter"
       },
       {
-        "role": "receiver",
+        "role": "affected",
         "key": {
           "alg": "Ed25519",
-          "x": "NZaxmJZy1D3YyMikLsTaZqY49rJACaW4NIHIPicjS1A"
+          "x": "gAakZO0_RFoZ6h9iHDSYzV7dXInkcIZm2EwFLtipmT0"
         }
       }
     ],
-    "elements": [
-      {
-        "from": 0,
-        "to": 1,
-        "digest": "sha256:ed8ad1ff4ad0480c8ff01ee6df62a77b3cc1cbf8c4f47a0298f81d34c7a8300c",
-        "type": "thing"
-      }
-    ],
+    "action": {
+      "digest": "sha256:f3e4f425ffa6beb433a5b22530f9b53c2ad00508e4106aeabf6ca1b0719fe5c9",
+      "type": "hug"
+    },
+    "objects": [],
     "arbiters": [
-      {
-        "party": 0,
-        "url": "https://aeilus.institute/arbiter/",
-        "key": {
-          "alg": "Ed25519",
-          "x": "lbEewrwGYn2zM3-YfvGoo-7elVC-mRjQptkbtqNM1tk"
-        },
-        "name": "ÆVRI arbiter (test key)"
-      },
       {
         "party": 1,
         "url": "https://aeilus.institute/arbiter/",
         "key": {
           "alg": "Ed25519",
-          "x": "lbEewrwGYn2zM3-YfvGoo-7elVC-mRjQptkbtqNM1tk"
+          "x": "MLWh5i_wbnfdf1j1kpMJWZWfP19FQHi9BkiSwEa4T80"
         },
         "name": "ÆVRI arbiter (test key)"
       }
@@ -57,7 +45,7 @@
     {
       "party": 1,
       "alg": "Ed25519",
-      "sig": "ZJuOEcApxerg0MEWUU6KXzysVWL6pE9CdVWRJJUd_VEnIIIla6Pyyi3bgHlMYFDC16B28fTeOxwxejDrFgaxAA"
+      "sig": "JrB12CtZV3MzSByUa2piibxq2bF4zuctvrqYV9ig5I9UtyaT_E_v2xmjq8crdnny-tt4liFIzhvQW57s73qPDw"
     }
   ]
 }

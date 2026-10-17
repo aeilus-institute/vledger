@@ -1,0 +1,23 @@
+{
+  "card": {
+    "type": "aevri.vledger.card",
+    "version": 1,
+    "address": "vw1:1orNr8BeFCs0Z-6sEFYSHTeB53tLZBrDtuY9ZYelSJQ",
+    "kind": "person",
+    "encKey": {
+      "kty": "EC",
+      "crv": "P-256",
+      "x": "UhKsCmLJy3F1e0EhSCrW0O0Sv4f46_1euj_1RAnu3PU",
+      "y": "yzY9Jgzn_XN19bf3RTvYbMGslfciWRt8ZhXnBxT6evE"
+    },
+    "storage": {
+      "stores": true,
+      "purpose": "Keep what my family tells me",
+      "retentionDays": 3650,
+      "publishes": "no"
+    },
+    "updatedAt": "2026-10-17T09:00:00Z",
+    "name": "Daughter"
+  },
+  "sig": "n3XPth0TCooWpRP1awmM2oWYXEiq6AjFXqpx2pAYrG_wiFw3pu102ksxgSIDJfWx8Yu6-vwTbrNOsVBNW-bkAQ"
+}

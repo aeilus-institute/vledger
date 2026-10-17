@@ -1,0 +1,17 @@
+{
+  "type": "aevri.vledger.message",
+  "version": 1,
+  "id": "01a1496d-52e3-7519-a297-2314b1d45854",
+  "to": "vw1:1orNr8BeFCs0Z-6sEFYSHTeB53tLZBrDtuY9ZYelSJQ",
+  "sentAt": "2026-10-17T08:10:00Z",
+  "epk": {
+    "kty": "EC",
+    "crv": "P-256",
+    "x": "chJArEJNeZ0kH9y4WgEVigtGQQan0pqWZcb7BgP-DNY",
+    "y": "rCwSLxRULmQ5Hv9YBdc-DjHmqUck6fKlE6ArRQtR2fM"
+  },
+  "iv": "66C061dxKc00GRJ6",
+  "ct": "m4z8n7lUKUGw65qGjk4_CrJtsfYYdUvcbKuNPDGFSADxZEj4_TXqGQbFJI2IrDH3rlxTzFfam1-Ymr0J_3IT3qTVJ1WBgZUjQq_NJ9hIv6yix6w5yVjHSMPfYpRBFOL7vVVhypUgTAlFAu8mpL_lJfUhgHLWf0_WVjHaxY39d7fg7soGTbgGSTXgj72jMZVP3wmmnkipRFJblmHo7couhpDBFuNMi6MO6_6JcQ7VFVG6f4aDIgB13KoG2VA4WAqMFcPrCTMKRbzbHF7TOsRyprQlZLyQiQIOybElDP4rKI5iKIJlPdh__qP6eWUcoqfssnP_bmNzVIXyZwkdZTV5PD5KWqer7joIZ4YVMRExH_8U28Qdo4JDq0-0DSlHbAOOMw",
+  "from": "vw1:gAakZO0_RFoZ6h9iHDSYzV7dXInkcIZm2EwFLtipmT0",
+  "sig": "Bk-UUwE8OF5R1bCAlPK1ShtHiNDctb6suvEzey_0NHQkq3L5aCm73vwcd_6xKhfF8gxV7Cp1dgydKDBcDmGsDw"
+}

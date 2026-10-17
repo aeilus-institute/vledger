@@ -1,18 +1,18 @@
 {
   "type": "aevri.vledger.ruling",
-  "caseId": "01a146c3-bd23-7c06-accc-af76ec99419b",
-  "receiptDigest": "sha256:05d594483283fd99889fe8821ddbe50fe85c6b8e1552c2fbfc07064d975e9d6f",
+  "caseId": "01a1496d-5439-730e-b83e-1debba1eede0",
+  "receiptDigest": "sha256:8e68480617d99ffe3506609cd74e95c56c0f6cde74045ea8d95cfbf1e083b224",
   "mode": "opinion",
   "binding": true,
-  "decision": "In my opinion the exchange was a gift.",
+  "decision": "In my opinion it happened.",
   "issuedAt": "2026-10-20T10:00:00Z",
   "arbiter": {
     "url": "https://aeilus.institute/arbiter/",
     "key": {
       "alg": "Ed25519",
-      "x": "lbEewrwGYn2zM3-YfvGoo-7elVC-mRjQptkbtqNM1tk"
+      "x": "MLWh5i_wbnfdf1j1kpMJWZWfP19FQHi9BkiSwEa4T80"
     },
     "name": "ÆVRI arbiter (test key)"
   },
-  "sig": "GcZolAXpp5PazeBZmELJbAE3hjJiEW4ud8maoGn9y-FG91DVIw1yZf1YwPrcoiCE5SfeqQ-vg8GCyyIPDLAxDQ"
+  "sig": "FR4tknx7A1wVQCUVBXxOMzWCb-0lrodP36BDSlh3G6B1RpRy4zp03_riRcCGfOAyLOz1dt4YL1NWsD2R8AVQAg"
 }

@@ -1,18 +1,18 @@
 {
   "type": "aevri.vledger.stamp",
-  "receiptDigest": "sha256:05d594483283fd99889fe8821ddbe50fe85c6b8e1552c2fbfc07064d975e9d6f",
+  "receiptDigest": "sha256:8e68480617d99ffe3506609cd74e95c56c0f6cde74045ea8d95cfbf1e083b224",
   "parties": [
-    "sha256:8fafa60f07f5817886e8c77c0eacf1ab28a3788b164a86e734b642839908ddf5",
-    "sha256:83b078f930462a41cbdf89bf37b01fe4b65fa5fb80bf48e182034e7d6cd856ac"
+    "sha256:f068ac8927ed97247d76cb3490a41886f2807c9797aadb369583df204a9bbfd9",
+    "sha256:6042346c96145797f27ad38e313850d2a9db3173d658edad573b87875757fdca"
   ],
-  "receivedAt": "2026-10-16T12:00:00Z",
+  "receivedAt": "2026-10-17T12:00:00Z",
   "arbiter": {
     "url": "https://aeilus.institute/arbiter/",
     "key": {
       "alg": "Ed25519",
-      "x": "lbEewrwGYn2zM3-YfvGoo-7elVC-mRjQptkbtqNM1tk"
+      "x": "MLWh5i_wbnfdf1j1kpMJWZWfP19FQHi9BkiSwEa4T80"
     },
     "name": "ÆVRI arbiter (test key)"
   },
-  "sig": "JWPiBC2EofbLvI7inMGlU-xm8nfpY9P1iBbBiTQ5J5ZOUvAn9WhwrQ_2xzw1uI8riyWpphwgT3K8PhQ7kwHODA"
+  "sig": "cRCh0dTfvs_m0UcIgG0Y47mGowj_Rg_hFdl2XzSn5cmkDPnxxOUWKIOjY2Vl-sd6yXfi4aD2ddKlXhOQcwCUDA"
 }

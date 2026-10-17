@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VLedger L0 fixtures</title>
+<title>VLedger fixtures d2</title>
 <style>
   body { font: 14px/1.5 system-ui, sans-serif; margin: 16px; background: #f8faf9; color: #1d2b28; }
   pre { white-space: pre-wrap; background: #fff; border: 1px solid #d5dfdc; padding: 12px; }
@@ -11,9 +11,9 @@
 </style>
 </head>
 <body>
-<h1>aevri.vledger 1.0 - fixture generator (test data only)</h1>
+<h1>aevri.vledger 1.0-d2 - fixture generator (test data only)</h1>
 <p>Runs the reference code with Web Crypto and writes <code>fixtures/*.json</code> through tools/devserver.py.
-All passphrases and private keys below are public test values.</p>
+All passphrases and private keys here are public test values.</p>
 <button id="run">Generate fixtures</button>
 <pre id="log"></pre>
 <script type="module">
@@ -27,203 +27,207 @@ const put = async (name, data) => {
   log('wrote fixtures/' + name, 'ok');
 };
 const clone = (x) => JSON.parse(JSON.stringify(x));
-const T = (d) => d + 'T10:00:00Z';
-
 const PASS_A = 'vledger test passphrase A';
 const PASS_B = 'vledger test passphrase B';
-const ARBITER_URL = 'https://aeilus.institute/arbiter/';
+const REG = 'https://example-municipality.test/vledger/registry.json';
 
 async function run() {
-  const manifest = { format: 'aevri.vledger', version: '1.0', generatedAt: C.nowIso(), note: 'Test data only. Passphrases and private keys here are public.', fixtures: [] };
+  const manifest = { format: 'aevri.vledger', version: '1.0-d2', generatedAt: C.nowIso(), note: 'Test data only. Passphrases and private keys here are public.', fixtures: [] };
   const add = (file, schema, expect) => manifest.fixtures.push({ file, schema, expect });
 
-  // ---- provider recovery key (test) ----
-  const prov = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
-  const provPub = await crypto.subtle.exportKey('jwk', prov.publicKey);
-  const provPriv = await crypto.subtle.exportKey('jwk', prov.privateKey);
-
-  // ---- wallet A: a person with goals, counterparties, exchanges ----
+  // ---- three wallets: A (holder), B (daughter), M (municipality); a manufacturer card ----
   const { doc: A, session: sa } = await C.createWallet(PASS_A, { createdAt: '2026-10-17T09:00:00Z' });
-  await C.addProviderRecoverySlot(A, sa, { providerId: 'https://aeilus.institute/vledger/', keyId: 'aevri-recovery-test-1', providerPublicJwk: { kty: provPub.kty, crv: provPub.crv, x: provPub.x, y: provPub.y } });
+  const { doc: B, session: sb } = await C.createWallet(PASS_B, { createdAt: '2026-10-17T09:00:00Z' });
+  const { session: sm } = await C.createWallet('vledger test passphrase M', { createdAt: '2026-10-17T09:00:00Z' });
+  const { session: sp } = await C.createWallet('vledger test passphrase P', { createdAt: '2026-10-17T09:00:00Z' });
+  const cardA = await C.makeCard(sa, { kind: 'person', name: 'Victor', storage: { stores: false, publishes: 'no' }, updatedAt: '2026-10-17T09:00:00Z' });
+  const cardB = await C.makeCard(sb, { kind: 'person', name: 'Daughter', storage: { stores: true, purpose: 'Keep what my family tells me', retentionDays: 3650, publishes: 'no' }, updatedAt: '2026-10-17T09:00:00Z' });
+  const cardM = await C.makeCard(sm, { kind: 'state', name: 'Example Municipality', registryUrl: REG, storage: { stores: true, purpose: 'Analytics and improving roads', retentionDays: 730, publishes: 'sender-choice' }, updatedAt: '2026-10-17T09:00:00Z' });
+  const cardP = await C.makeCard(sp, { kind: 'organization', name: 'Example Toothpaste Co', storage: { stores: true, purpose: 'Product improvement', retentionDays: 365, publishes: 'anonymous' }, updatedAt: '2026-10-17T09:00:00Z' });
+  for (const [n, c] of [['card-a.json', cardA], ['card-b.json', cardB], ['card-municipality.json', cardM], ['card-maker.json', cardP]]) {
+    await put(n, c); add(n, 'card.schema.json', { signatureValid: true });
+  }
+  const badCard = clone(cardM); badCard.card.storage.publishes = 'named';
+  await put('invalid-card-tampered.json', badCard); add('invalid-card-tampered.json', 'card.schema.json', { signatureValid: false });
+
+  // ---- municipality registry ----
+  const registry = { type: 'aevri.vledger.registry', version: 1, registryUrl: REG, owner: cardM, updatedAt: '2026-10-17T09:00:00Z',
+    systems: [ { systemId: 'city', title: 'City life', note: 'Streets, transport, safety' } ],
+    items: [
+      { itemId: 'road-17', kind: 'object', title: 'Road along the river', system: 'city', category: 'service', actions: ['walk on', 'drive on', 'cycle on'], plan: { promise: 'A safe walk to the centre in 15 minutes', plannedV: 0.01 } },
+      { itemId: 'built-road-17', kind: 'event', title: 'The municipality built the road along the river', system: 'city', occurredAt: '2026-09-01', affects: 'Residents of the river district', plan: { promise: 'Less traffic in the old streets' } },
+    ],
+    references: [ { system: 'city', phrase: 'A new pedestrian crossing near the school', v: 0.02, words: 'Children walk to school alone' } ] };
+  const regDoc = { registry, sig: await C.sign(sm.signer, C.te.encode(C.canon(registry))) };
+  await put('registry-municipality.json', regDoc);
+  add('registry-municipality.json', 'registry.schema.json', { signedByOwner: true });
+
+  // ---- wallet A records ----
   const plain = [];
-  const rec = async (payload) => { const env = await C.addRecord(A, sa, payload); plain.push({ id: env.id, payload }); return env.id; };
-  const P = (kind, body, extra = {}) => ({ kind, createdAt: extra.createdAt || '2026-10-17T09:05:00Z', supersedes: extra.supersedes ?? null, source: extra.source || 'manual', body });
+  const rec = async (kind, body, extra = {}) => {
+    const payload = { kind, createdAt: extra.createdAt || '2026-10-17T09:05:00Z', supersedes: extra.supersedes ?? null, source: extra.source || 'manual', body };
+    const env = await C.addRecord(A, sa, payload); plain.push({ id: env.id, payload }); return env.id;
+  };
+  const sysFamily = await rec('value-system', { title: 'Family', W: 3, status: 'active' });
+  const sysCity = await rec('value-system', { title: 'City', W: 1, status: 'active', registryUrl: REG });
+  const self = await rec('contact', { type: 'self', name: 'Me', address: sa.address });
+  const daughter = await rec('contact', { type: 'person', name: 'Daughter', address: sb.address, card: cardB });
+  const mun = await rec('contact', { type: 'state', name: 'Example Municipality', address: sm.address, card: cardM });
+  const maker = await rec('contact', { type: 'organization', name: 'Example Toothpaste Co', address: sp.address, card: cardP });
+  const shop = await rec('contact', { type: 'organization', name: 'Corner shop' });
+  const hub = await rec('contact', { type: 'device', name: 'Home hub' });
+  const gClose = await rec('goal', { title: 'Be close to my daughter', systemId: sysFamily, S: 2, status: 'active', factIds: [] });
+  const gLetter = await rec('goal', { title: 'Write a letter to my father', systemId: sysFamily, S: 1, N: 1, status: 'active', factIds: [] });
+  const gTeeth = await rec('goal', { title: 'Healthy teeth', S: 1, status: 'active', factIds: [] });
+  const gMove = await rec('goal', { title: 'Get around the city safely', systemId: sysCity, S: 1, status: 'active', factIds: [] });
+  await rec('settings', { planCountDefault: 0, planCountBy: [], requests: { blockAll: false, blockSystems: [sysCity], blockContacts: [] }, relays: [], arbiters: [], providers: [{ kind: 'device' }], storage: { stores: false, publishes: 'no' } });
+  const systems = [ { id: sysFamily, W: 3, status: 'active' }, { id: sysCity, W: 1, status: 'active' } ];
+  const goals = [ { id: gClose, systemId: sysFamily, S: 2, status: 'active' }, { id: gLetter, systemId: sysFamily, S: 1, N: 1, status: 'active' }, { id: gTeeth, S: 1, status: 'active' }, { id: gMove, systemId: sysCity, S: 1, status: 'active' } ];
 
-  await rec(P('settings', { planCountDefault: 0, planCountBy: [], arbiters: [], providers: [{ kind: 'device', label: 'This browser' }] }));
-  const cpSelf = await rec(P('counterparty', { type: 'self', name: 'Me' }));
-  const cpAnna = await rec(P('counterparty', { type: 'person', name: 'Anna', note: 'Neighbour' }));
-  const cpInst = await rec(P('counterparty', { type: 'organization', name: 'Aeilus Value Research Institute', profileUrl: 'https://aeilus.institute/vledger/profile.json' }));
-  const cpMun = await rec(P('counterparty', { type: 'state', name: 'Local municipality' }));
-  const tThing = await rec(P('element-type', { name: 'Thing', category: 'thing' }));
-  const tInfo = await rec(P('element-type', { name: 'Research work', category: 'information' }));
-  const tSvc = await rec(P('element-type', { name: 'Public service', category: 'service' }));
-  const factFather = await rec(P('fact', { topic: 'family', text: 'I have not written to my father for two years and I want to change that.', certainty: 'medium', exploring: true, goalIds: [] }));
-  const gLetter = await rec(P('goal', { title: 'Write a letter to my father', why: 'Restore contact', S: 1000000, N: 200000, unit: 'points', status: 'active', factIds: [factFather] }));
-  const gGreek = await rec(P('goal', { title: 'Speak basic Greek', S: 1000000, N: 1000000, unit: 'points', status: 'active', factIds: [] }));
-  const goals = [
-    { id: gLetter, S: 1000000, N: 200000, status: 'active' },
-    { id: gGreek, S: 1000000, N: 1000000, status: 'active' },
-  ];
-
-  // Exchange 1: Anna gave me a pen (it let me write the letter).
-  const exPen = await rec(P('exchange', { counterpartyId: cpAnna, given: [], received: [{ label: 'Ballpoint pen', typeId: tThing, quantity: 1 }], occurredAt: '2026-10-16', status: 'recorded' }));
-  const contribPen = [{ goalId: gLetter, c: 60000 }];
-  const vPen = V.comparableValue(goals, contribPen);
-  const aPen = await rec(P('assessment', { exchangeId: exPen, elementRef: { exchangeId: exPen, side: 'received', index: 0 }, phase: 'received', gained: ['I finally started the letter'], lost: [], ownScore: { value: 1000000, unit: 'points' }, contributions: contribPen, v: vPen.v, confidence: 'medium', reasons: 'Without a pen at hand I kept postponing it.' }));
-
-  // Exchange 2: the institute's research work with planned value (pilot D-14).
-  const exWork = await rec(P('exchange', { counterpartyId: cpInst, given: [{ label: '20 minutes of reading', quantity: 20, unit: 'min' }], received: [{ label: 'How to Assess Value (research)', typeId: tInfo }], occurredAt: '2026-10-15', status: 'recorded' }));
-  const planWork = await rec(P('plan', { exchangeId: exWork, elementRef: { exchangeId: exWork, side: 'received', index: 0 }, authorCounterpartyId: cpInst, promise: 'A method you can apply to a real decision this week', goalCategory: 'decisions', plannedV: 0.05, profileRef: 'https://aeilus.institute/vledger/profile.json#value-assessment-methodology' }, { source: 'profile' }));
-  const contribWork = [{ goalId: gGreek, k: 0.01 }];
-  const vWork = V.comparableValue(goals, contribWork);
-  const aWork = await rec(P('assessment', { exchangeId: exWork, elementRef: { exchangeId: exWork, side: 'received', index: 0 }, phase: 'received', gained: ['A clear checklist'], lost: ['20 minutes'], contributions: contribWork, v: vWork.v, planCount: V.planFactor({ planCountDefault: 0 }, { counterpartyId: cpInst }), confidence: 'low' }));
-
-  // Exchange 3: municipality service with harm (anti-value).
-  const exSvc = await rec(P('exchange', { counterpartyId: cpMun, given: [{ label: 'Fee', typeId: tSvc, quantity: 20, unit: 'EUR' }], received: [{ label: 'Waste collection permit', typeId: tSvc }], occurredAt: '2026-10-10', status: 'recorded' }));
-  const contribSvc = [{ goalId: gGreek, c: -50000 }];
-  const vSvc = V.comparableValue(goals, contribSvc);
-  await rec(P('assessment', { exchangeId: exSvc, elementRef: { exchangeId: exSvc, side: 'received', index: 0 }, phase: 'received', gained: ['Permit received'], lost: ['Three visits', 'A lost evening of study'], contributions: contribSvc, v: vSvc.v, confidence: 'high' }));
-
-  // Correction and withdrawal, then an erased note.
-  await rec(P('fact', { topic: 'family', text: 'I wrote the first page of the letter.', certainty: 'high', exploring: false, goalIds: [gLetter] }, { supersedes: factFather, createdAt: '2026-10-17T09:30:00Z' }));
-  const note = await rec(P('note', { text: 'Draft thoughts I do not want to keep.' }));
-  await rec(P('note', { withdrawn: true }, { supersedes: note }));
-  const erasedId = await rec(P('note', { text: 'This record will be erased.' }));
+  // e1: Daughter hugged me (affected), assessed and marked as a reference
+  const e1 = await rec('event', { actor: daughter, action: 'hugged', actionType: 'hug', objects: [], affected: [self], role: 'affected', occurredAt: '2026-10-17T08:00:00Z', systemId: sysFamily, status: 'confirmed', stamps: [], rulings: [] });
+  const c1 = [{ goalId: gClose, k: 0.05 }];
+  const v1 = V.assessValue(goals, systems, c1, []);
+  await rec('assessment', { eventId: e1, phase: 'realized', gained: ['Warmth', 'She was not in a hurry'], lost: [], contributions: c1, spent: [], v: v1.v, spentV: 0, reference: true, confidence: 'high' });
+  // e2: I bought toothpaste at the shop; the maker's plan; money spent
+  const e2 = await rec('event', { actor: self, action: 'bought', actionType: 'buy', objects: [{ label: 'Toothpaste', quantity: 1, unit: 'tube' }], affected: [shop], role: 'actor', occurredAt: '2026-10-10', status: 'confirmed', stamps: [], rulings: [] });
+  await rec('plan', { eventId: e2, objectIndex: 0, author: maker, promise: 'Protects enamel for 12 hours', plannedV: 0.002 });
+  const c2 = [{ goalId: gTeeth, k: 0.02 }], s2 = [{ goalId: gMove, k: 0.001 }];
+  const v2 = V.assessValue(goals, systems, c2, s2);
+  await rec('assessment', { eventId: e2, objectIndex: 0, phase: 'realized', gained: ['Fresh taste'], lost: ['A little money'], contributions: c2, spent: s2, v: v2.v, spentV: v2.spentV, planCount: 0, reference: false, confidence: 'medium' });
+  // e3: I walk on the municipality's road (user, from the registry); realized then retro
+  const e3 = await rec('event', { actor: self, action: 'walk on', actionType: 'use', objects: [{ label: 'Road along the river' }], affected: [], role: 'user', occurredAt: '2026-10-16', systemId: sysCity, registryRef: { registryUrl: REG, itemId: 'road-17', owner: sm.address }, status: 'confirmed', stamps: [], rulings: [] }, { source: 'registry' });
+  await rec('plan', { eventId: e3, objectIndex: 0, author: mun, promise: 'A safe walk to the centre in 15 minutes', plannedV: 0.01, registryRef: { registryUrl: REG, itemId: 'road-17', owner: sm.address } }, { source: 'registry' });
+  const c3 = [{ goalId: gMove, k: 0.08 }], s3 = [{ goalId: gLetter, k: 0.01 }];
+  const v3 = V.assessValue(goals, systems, c3, s3);
+  await rec('assessment', { eventId: e3, objectIndex: 0, phase: 'realized', gained: ['Quiet walk', 'Saw the river'], lost: ['Mud at the bridge'], contributions: c3, spent: s3, v: v3.v, spentV: v3.spentV, planCount: 0, reference: false, confidence: 'medium' }, { createdAt: '2026-10-16T18:00:00Z' });
+  const c3r = [{ goalId: gMove, k: 0.1 }];
+  const v3r = V.assessValue(goals, systems, c3r, s3);
+  await rec('assessment', { eventId: e3, objectIndex: 0, phase: 'retro', gained: ['I walk there every day now'], lost: [], contributions: c3r, spent: s3, v: v3r.v, spentV: v3r.spentV, reference: false, confidence: 'high' }, { createdAt: '2026-10-17T10:00:00Z' });
+  // e4: The municipality built the road (affected, from the registry); no assessment at all
+  const e4 = await rec('event', { actor: mun, action: 'built', actionType: 'build', objects: [{ label: 'Road along the river' }], affected: [self], role: 'affected', occurredAt: '2026-09-01', systemId: sysCity, registryRef: { registryUrl: REG, itemId: 'built-road-17', owner: sm.address }, status: 'confirmed', stamps: [], rulings: [] }, { source: 'registry' });
+  // e5: suggested by the home hub, not confirmed
+  const e5 = await rec('event', { actor: self, action: 'cooked', actionType: 'cook', objects: [{ label: 'Dinner for the family' }], affected: [daughter], role: 'actor', occurredAt: '2026-10-17T19:00:00Z', systemId: sysFamily, status: 'suggested', suggestedBy: hub, stamps: [], rulings: [] }, { source: 'device' });
+  const factId = await rec('fact', { topic: 'family', text: 'My daughter moves out next year.', certainty: 'high', exploring: true, goalIds: [gClose] });
+  const erasedId = await rec('note', { text: 'This record will be erased.' });
   C.erase(A, erasedId, '2026-10-17T11:00:00Z');
   plain.find((p) => p.id === erasedId).payload = null;
 
-  const chainA = await C.verifyChain(A);
-  log('wallet A chain problems: ' + chainA.length, chainA.length ? 'bad' : 'ok');
-  // Self-checks: unlock with passphrase and with the provider key, read every record back.
-  const s1 = await C.unlockWithPassphrase(A, PASS_A);
-  const s2 = await C.recoverWithProviderKey(A, 'r1', provPriv);
-  for (const p of plain) {
-    const env = A.records.find((r) => r.id === p.id);
-    const back = await C.readRecord(A, s1, env);
-    const back2 = await C.readRecord(A, s2, env);
-    if (C.canon(back) !== C.canon(p.payload) || C.canon(back2) !== C.canon(p.payload)) throw new Error('round trip failed for ' + p.id);
-  }
-  let wrongOk = false; try { await C.unlockWithPassphrase(A, 'wrong'); wrongOk = true; } catch {}
-  if (wrongOk) throw new Error('wrong passphrase opened the wallet');
-  log('wallet A: passphrase and provider recovery both open it; wrong passphrase does not', 'ok');
+  const events = plain.filter((p) => p.payload?.kind === 'event').map((p) => ({ id: p.id, ...p.payload.body }));
+  const assess = plain.filter((p) => p.payload?.kind === 'assessment').map((p) => ({ ...p.payload.body, createdAt: p.payload.createdAt }));
+  const an = V.analytics(events, assess, self);
+  log('wallet A chain problems: ' + (await C.verifyChain(A)).length);
+  const sa2 = await C.unlockWithPassphrase(A, PASS_A);
+  for (const p of plain) { const env = A.records.find((r) => r.id === p.id); if (C.canon(await C.readRecord(A, sa2, env)) !== C.canon(p.payload)) throw new Error('round trip ' + p.id); }
+  if (sa2.address !== sa.address) throw new Error('address after unlock');
 
   await put('wallet-a.vledger.json', A);
-  await put('wallet-a.plain.json', { note: 'Test data only.', passphrase: PASS_A, providerRecovery: { slotId: 'r1', privateJwk: provPriv }, records: plain,
-    values: [ { assessmentOf: exPen, contributions: contribPen, v: vPen.v }, { assessmentOf: exWork, contributions: contribWork, v: vWork.v }, { assessmentOf: exSvc, contributions: contribSvc, v: vSvc.v } ],
-    goals });
+  await put('wallet-a.plain.json', { note: 'Test data only.', passphrase: PASS_A, address: sa.address, selfId: self, records: plain, systems, goals,
+    values: [ { event: 'e1 hug', contributions: c1, spent: [], v: v1.v, spentV: 0 }, { event: 'e2 toothpaste', contributions: c2, spent: s2, v: v2.v, spentV: v2.spentV, efficiency: v2.efficiency }, { event: 'e3 road realized', contributions: c3, spent: s3, v: v3.v, spentV: v3.spentV, efficiency: v3.efficiency }, { event: 'e3 road retro', contributions: c3r, spent: s3, v: v3r.v, spentV: v3r.spentV } ],
+    analytics: an, suggested: [e5], unassessed: [e4] });
   add('wallet-a.vledger.json', 'wallet.schema.json', { chainProblems: 0, opensWith: 'wallet-a.plain.json', erased: [erasedId] });
-
-  // Tampered copy: one ciphertext byte changed.
-  const bad = clone(A);
-  const victim = bad.records[3];
-  const ct = C.unb64u(victim.ct); ct[0] ^= 1; victim.ct = C.b64u(ct);
+  await put('wallet-b.vledger.json', B);
+  await put('wallet-b.plain.json', { note: 'Test data only.', passphrase: PASS_B, address: sb.address });
+  add('wallet-b.vledger.json', 'wallet.schema.json', { chainProblems: 0, opensWith: 'wallet-b.plain.json' });
+  const bad = clone(A); const victim = bad.records[4]; const ct = C.unb64u(victim.ct); ct[0] ^= 1; victim.ct = C.b64u(ct);
   await put('invalid-wallet-tampered.vledger.json', bad);
-  add('invalid-wallet-tampered.vledger.json', 'wallet.schema.json', { chainProblems: 1, problemRecord: victim.id });
+  add('invalid-wallet-tampered.vledger.json', 'wallet.schema.json', { chainProblems: 1 });
 
-  // ---- wallet B and receipts ----
-  const { doc: B, session: sb } = await C.createWallet(PASS_B, { createdAt: '2026-10-17T09:00:00Z' });
+  // ---- messages ----
+  const eventWords = { actor: 'Daughter', action: 'hugged', objects: [], affected: ['me'], occurredAt: '2026-10-17T08:00:00Z' };
+  const share = { kind: 'share', event: eventWords, phase: 'realized', gained: ['Warmth', 'She was not in a hurry'], lost: [], v: v1.v, spentV: 0, publish: 'no', system: 'Family' };
+  const mShare = await C.sealMessage(cardB, share, sa, { sentAt: '2026-10-17T08:10:00Z' });
+  await put('message-share-to-daughter.json', mShare);
+  add('message-share-to-daughter.json', 'message.schema.json', { recipient: 'wallet-b', from: sa.address, verified: true, body: share });
+  const mAnon = await C.sealMessage(cardP, { kind: 'share', event: { actor: 'me', action: 'used', objects: ['Toothpaste'] }, phase: 'realized', gained: ['Fresh taste'], lost: [], v: v2.v, planGap: 'below-plan', publish: 'anonymous' }, null, { sentAt: '2026-10-17T08:20:00Z' });
+  await put('message-share-anonymous.json', mAnon);
+  add('message-share-anonymous.json', 'message.schema.json', { recipient: 'maker (no wallet in fixtures)', from: null, verified: false });
+  const reqCity = { kind: 'request', event: { actor: 'me', action: 'walk on', objects: ['Road along the river'], registryRef: { registryUrl: REG, itemId: 'road-17', owner: sm.address } }, system: 'City', systemRegistryUrl: REG, plan: { promise: 'A safe walk to the centre in 15 minutes', plannedV: 0.01 } };
+  const mReq = await C.sealMessage(cardA, reqCity, sm, { sentAt: '2026-10-17T12:00:00Z' });
+  await put('message-request-city.json', mReq);
+  add('message-request-city.json', 'message.schema.json', { recipient: 'wallet-a', from: sm.address, verified: true, body: reqCity, blocked: true });
+  const reqTeeth = { kind: 'request', event: { actor: 'me', action: 'used', objects: ['Toothpaste'] }, system: 'Health', plan: { promise: 'Protects enamel for 12 hours' } };
+  const mReq2 = await C.sealMessage(cardA, reqTeeth, sp, { sentAt: '2026-10-17T12:05:00Z' });
+  await put('message-request-maker.json', mReq2);
+  add('message-request-maker.json', 'message.schema.json', { recipient: 'wallet-a', from: sp.address, verified: true, body: reqTeeth, blocked: false });
+  const sugg = { kind: 'suggestion', source: 'Home hub', events: [ { actor: 'me', action: 'cooked', objects: ['Dinner for the family'], affected: ['Daughter'], occurredAt: '2026-10-17T19:00:00Z' } ] };
+  const hubSession = (await C.createWallet('vledger test passphrase H', { createdAt: '2026-10-17T09:00:00Z' })).session;
+  const mSug = await C.sealMessage(cardA, sugg, hubSession, { sentAt: '2026-10-17T19:30:00Z' });
+  await put('message-suggestion.json', mSug);
+  add('message-suggestion.json', 'message.schema.json', { recipient: 'wallet-a', from: hubSession.address, verified: true, body: sugg });
+  const mBad = clone(mShare); mBad.sentAt = '2026-10-17T08:11:00Z';
+  await put('invalid-message-tampered-header.json', mBad);
+  add('invalid-message-tampered-header.json', 'message.schema.json', { recipient: 'wallet-b', from: sa.address, verified: false, body: share });
+  // self-check: B opens the share; A cannot
+  const sbOpen = await C.unlockWithPassphrase(B, PASS_B);
+  const opened = await C.openMessage(sbOpen, mShare);
+  if (!opened.verified || C.canon(opened.body) !== C.canon(share)) throw new Error('share did not open');
+  let leaked = false; try { await C.openMessage({ ...sa, address: cardB.card.address }, mShare); leaked = true; } catch { /* expected */ }
+  if (leaked) throw new Error('third party opened the message');
+  log('messages: recipient opens and verifies; a third party cannot', 'ok');
+
+  // ---- receipt v2 for e1 (daughter actor, me affected) and arbiter ----
   const arbKeys = await C.newIdentity();
-  const arbiter = { ref: { url: ARBITER_URL, key: arbKeys.publicKey, name: 'ÆVRI arbiter (test key)' }, signer: arbKeys.privateKey };
-
-  const penEl = { salt: C.b64u(C.rand(16)), label: 'Ballpoint pen', quantity: 1, unit: null, note: null };
-  const baseReceipt = {
-    type: 'aevri.vledger.receipt', version: 1, receiptId: C.uuid7(), occurredAt: T('2026-10-16'),
-    parties: [ { role: 'giver', key: sb.publicKey, label: 'Anna' }, { role: 'receiver', key: sa.publicKey } ],
-    elements: [ { from: 0, to: 1, digest: await C.elementDigest(penEl), type: 'thing' } ],
-    arbiters: [ { party: 0, ...arbiter.ref }, { party: 1, ...arbiter.ref } ],
-    mandate: { mode: 'attest' },
-  };
-  const matched = { receipt: clone(baseReceipt), signatures: [] };
+  const arbiter = { ref: { url: 'https://aeilus.institute/arbiter/', key: arbKeys.publicKey, name: 'ÆVRI arbiter (test key)' }, signer: arbKeys.privateKey };
+  const act = { salt: C.b64u(C.rand(16)), text: 'hugged' };
+  const base = { type: 'aevri.vledger.receipt', version: 2, receiptId: C.uuid7(), occurredAt: '2026-10-17T08:00:00Z',
+    parties: [ { role: 'actor', key: sb.publicKey, label: 'Daughter' }, { role: 'affected', key: sa.publicKey } ],
+    action: { digest: await C.actionDigest(act), type: 'hug' }, objects: [], arbiters: [ { party: 1, ...arbiter.ref } ], mandate: { mode: 'attest' } };
+  const matched = { receipt: clone(base), signatures: [] };
   await C.signReceipt(matched, 0, sb); await C.signReceipt(matched, 1, sa);
-  const st = await C.receiptStatus(matched);
-  log('receipt matched: ' + st.matched, st.matched ? 'ok' : 'bad');
   await put('receipt-matched.json', matched);
-  add('receipt-matched.json', 'receipt.schema.json', { matched: true, binding: false, receiptDigest: await C.receiptDigest(matched.receipt), elementOpening: penEl });
-
-  const half = { receipt: clone(baseReceipt), signatures: [] };
-  await C.signReceipt(half, 1, sa);
-  await put('receipt-one-signature.json', half);
-  add('receipt-one-signature.json', 'receipt.schema.json', { matched: false, validSignatures: [1] });
-
-  const tampered = clone(matched); tampered.receipt.occurredAt = T('2026-10-15');
-  await put('invalid-receipt-tampered.json', tampered);
-  add('invalid-receipt-tampered.json', 'receipt.schema.json', { matched: false, validSignatures: [] });
-
-  const bindingR = { receipt: { ...clone(baseReceipt), receiptId: C.uuid7(), mandate: { mode: 'binding', arbiter: arbiter.ref, scope: 'Whether the pen was a gift or a loan', rulesUrl: 'https://aeilus.institute/arbiter/rules/' } }, signatures: [] };
+  add('receipt-matched.json', 'receipt.schema.json', { matched: true, binding: false, receiptDigest: await C.receiptDigest(matched.receipt), actionOpening: act });
+  const half = { receipt: clone(base), signatures: [] }; await C.signReceipt(half, 1, sa);
+  await put('receipt-one-signature.json', half); add('receipt-one-signature.json', 'receipt.schema.json', { matched: false, validSignatures: [1] });
+  const tampered = clone(matched); tampered.receipt.occurredAt = '2026-10-16T08:00:00Z';
+  await put('invalid-receipt-tampered.json', tampered); add('invalid-receipt-tampered.json', 'receipt.schema.json', { matched: false, validSignatures: [] });
+  const bindingR = { receipt: { ...clone(base), receiptId: C.uuid7(), mandate: { mode: 'binding', arbiter: arbiter.ref, scope: 'What happened that morning', rulesUrl: 'https://aeilus.institute/arbiter/rules/' } }, signatures: [] };
   await C.signReceipt(bindingR, 0, sb); await C.signReceipt(bindingR, 1, sa);
-  await put('receipt-binding.json', bindingR);
-  add('receipt-binding.json', 'receipt.schema.json', { matched: true, binding: true, receiptDigest: await C.receiptDigest(bindingR.receipt) });
-
-  // ---- arbiter ----
+  await put('receipt-binding.json', bindingR); add('receipt-binding.json', 'receipt.schema.json', { matched: true, binding: true, receiptDigest: await C.receiptDigest(bindingR.receipt) });
   const stampReq = { receiptDigest: await C.receiptDigest(matched.receipt), keys: matched.receipt.parties.map((p) => p.key), signatures: matched.signatures };
-  await put('arbiter-stamp-request.json', stampReq);
-  add('arbiter-stamp-request.json', 'arbiter.schema.json#/$defs/stampRequest', { signaturesValid: true });
-  const stamp = await C.makeStamp(arbiter, stampReq, '2026-10-16T12:00:00Z');
-  await put('arbiter-stamp.json', stamp);
-  add('arbiter-stamp.json', 'arbiter.schema.json#/$defs/stamp', { signedBy: 'arbiter', valid: true });
+  await put('arbiter-stamp-request.json', stampReq); add('arbiter-stamp-request.json', 'arbiter.schema.json#/$defs/stampRequest', { signaturesValid: true });
+  await put('arbiter-stamp.json', await C.makeStamp(arbiter, stampReq, '2026-10-17T12:00:00Z')); add('arbiter-stamp.json', 'arbiter.schema.json#/$defs/stamp', { signedBy: 'arbiter', valid: true });
+  const rb = await C.makeRuling(arbiter, { caseId: C.uuid7(), receiptDigest: await C.receiptDigest(bindingR.receipt), mode: 'binding', binding: true, decision: 'The event happened as recorded.', status: 'matched', reasons: 'Both parties confirmed.', issuedAt: '2026-10-20T10:00:00Z' });
+  await put('arbiter-ruling-binding.json', rb); add('arbiter-ruling-binding.json', 'arbiter.schema.json#/$defs/ruling', { signedBy: 'arbiter', valid: true, mandateMatches: 'receipt-binding.json' });
+  const ro = await C.makeRuling(arbiter, { caseId: C.uuid7(), receiptDigest: await C.receiptDigest(matched.receipt), mode: 'opinion', binding: false, decision: 'In my opinion it happened.', issuedAt: '2026-10-20T10:00:00Z' });
+  await put('arbiter-ruling-opinion.json', ro); add('arbiter-ruling-opinion.json', 'arbiter.schema.json#/$defs/ruling', { signedBy: 'arbiter', valid: true });
+  await put('invalid-ruling-binding-without-mandate.json', { ...clone(ro), binding: true }); add('invalid-ruling-binding-without-mandate.json', 'arbiter.schema.json#/$defs/ruling', { schemaValid: false });
 
-  const caseId = C.uuid7();
-  const rulingBinding = await C.makeRuling(arbiter, { caseId, receiptDigest: await C.receiptDigest(bindingR.receipt), mode: 'binding', binding: true, decision: 'The pen was a gift.', status: 'matched', reasons: 'Both parties agreed in the hearing that no return was discussed.', issuedAt: '2026-10-20T10:00:00Z' });
-  await put('arbiter-ruling-binding.json', rulingBinding);
-  add('arbiter-ruling-binding.json', 'arbiter.schema.json#/$defs/ruling', { signedBy: 'arbiter', valid: true, mandateMatches: 'receipt-binding.json' });
-  const rulingOpinion = await C.makeRuling(arbiter, { caseId: C.uuid7(), receiptDigest: await C.receiptDigest(matched.receipt), mode: 'opinion', binding: false, decision: 'In my opinion the exchange was a gift.', issuedAt: '2026-10-20T10:00:00Z' });
-  await put('arbiter-ruling-opinion.json', rulingOpinion);
-  add('arbiter-ruling-opinion.json', 'arbiter.schema.json#/$defs/ruling', { signedBy: 'arbiter', valid: true, mandateMatches: null });
-  const badRuling = { ...clone(rulingOpinion), binding: true };
-  await put('invalid-ruling-binding-without-mandate.json', badRuling);
-  add('invalid-ruling-binding-without-mandate.json', 'arbiter.schema.json#/$defs/ruling', { schemaValid: false });
-
-  // ---- organisation profile and feedback (pilot D-14) ----
-  const inst = await C.newIdentity();
-  const profile = { type: 'aevri.vledger.profile', version: 1, profileId: 'https://aeilus.institute/vledger/profile.json', kind: 'organization', name: 'Aeilus Value Research Institute', key: inst.publicKey, updatedAt: '2026-10-17T09:00:00Z',
-    feedback: { endpoint: 'https://aeilus.institute/vledger/feedback/', anonymousAccepted: true, minAggregate: 5 },
-    arbiter: arbiter.ref,
-    elements: [ { elementId: 'value-assessment-methodology', label: 'How to Assess Value', category: 'information', promise: 'A method you can apply to a real decision this week', goalCategory: 'decisions', plannedV: 0.05 } ] };
-  const profileDoc = { profile, sig: await C.sign(inst.privateKey, C.te.encode(C.canon(profile))) };
-  await put('profile-aevri.json', profileDoc);
-  add('profile-aevri.json', 'profile.schema.json', { signedBy: 'profile.key', valid: true });
-
-  const fbAnon = { type: 'aevri.vledger.feedback', version: 1, feedbackId: C.uuid7(), profileId: profile.profileId, elementId: 'value-assessment-methodology', phase: 'received', gained: ['A clear checklist'], lost: ['20 minutes'], gap: 'below-plan', v: vWork.v, anonymous: true, sentAt: '2026-10-17' };
-  await put('feedback-anonymous.json', fbAnon);
-  add('feedback-anonymous.json', 'feedback.schema.json', { schemaValid: true });
-  const fbNamed = { ...clone(fbAnon), feedbackId: C.uuid7(), anonymous: false, from: sa.publicKey };
-  fbNamed.sig = await C.sign(sa.signer, C.te.encode(C.canon(fbNamed)));
-  await put('feedback-named.json', fbNamed);
-  add('feedback-named.json', 'feedback.schema.json', { schemaValid: true, signedBy: 'from', valid: true });
-  await put('invalid-feedback-anonymous-with-key.json', { ...clone(fbAnon), from: sa.publicKey });
-  add('invalid-feedback-anonymous-with-key.json', 'feedback.schema.json', { schemaValid: false });
-
-  // ---- value model cases ----
+  // ---- value cases ----
+  const at4Sys = [ { id: 's1', W: 3, status: 'active' }, { id: 's2', W: 1, status: 'active' } ];
+  const at4Goals = [ { id: 'g1', systemId: 's1', S: 10, status: 'active' }, { id: 'g2', systemId: 's2', S: 5, status: 'active' } ];
+  const at4 = V.assessValue(at4Goals, at4Sys, [{ goalId: 'g1', k: 0.3 }], [{ goalId: 'g2', k: 0.2 }]);
   const cases = [
-    { name: 'pen for the letter', goals, contributions: contribPen },
-    { name: 'research as a share', goals, contributions: contribWork },
-    { name: 'harm to a goal', goals, contributions: contribSvc },
-    { name: 'two goals at once', goals, contributions: [{ goalId: gLetter, c: 20000 }, { goalId: gGreek, c: 100000 }] },
-    { name: 'dropped goal counts 0', goals: [goals[0], { ...goals[1], status: 'dropped' }], contributions: [{ goalId: gGreek, c: 500000 }] },
-  ].map((c) => ({ ...c, expect: V.comparableValue(c.goals, c.contributions) }));
-  const checkGoals = [ { id: 'g-a', S: 10, N: 10, status: 'active' }, { id: 'g-b', S: 1, N: 1, status: 'active' } ];
-  const checkAssessments = [
-    { at: '2026-10-01T00:00:00Z', v: 0.5, ownScore: { value: 1 }, contributions: [{ goalId: 'g-b', k: 0.6 }] },
-    { at: '2026-10-02T00:00:00Z', v: 0.4, ownScore: { value: 2 }, contributions: [{ goalId: 'g-b', k: 0.6 }] },
-    { at: '2026-10-03T00:00:00Z', v: 0.3, ownScore: { value: 3 }, contributions: [{ goalId: 'g-b', k: 0.1 }] },
-    { at: '2026-10-04T00:00:00Z', v: 0.2, ownScore: { value: 4 }, contributions: [] },
-    { at: '2026-10-05T00:00:00Z', v: 0.1, ownScore: { value: 5 }, contributions: [] },
+    { name: 'TZ v0.3 AT-4: systems 3 and 1, 30% of the only goal of the first, spent 20% of the only goal of the second', systems: at4Sys, goals: at4Goals, contributions: [{ goalId: 'g1', k: 0.3 }], spent: [{ goalId: 'g2', k: 0.2 }], expect: at4 },
+    { name: 'goal without a system goes to Other (mean W)', systems: at4Sys, goals: [...at4Goals, { id: 'g3', S: 1, status: 'active' }], contributions: [{ goalId: 'g3', k: 1 }], spent: [], expect: V.assessValue([...at4Goals, { id: 'g3', S: 1, status: 'active' }], at4Sys, [{ goalId: 'g3', k: 1 }], []) },
+    { name: 'no systems at all', systems: [], goals: [{ id: 'a', S: 1, status: 'active' }, { id: 'b', S: 3, status: 'active' }], contributions: [{ goalId: 'b', c: 1.5 }], spent: [], expect: V.assessValue([{ id: 'a', S: 1, status: 'active' }, { id: 'b', S: 3, status: 'active' }], [], [{ goalId: 'b', c: 1.5 }], []) },
+    { name: 'goals of a dropped system weigh 0', systems: [{ id: 's1', W: 3, status: 'dropped' }, { id: 's2', W: 1, status: 'active' }], goals: at4Goals, contributions: [{ goalId: 'g1', k: 0.5 }], spent: [], expect: V.assessValue(at4Goals, [{ id: 's1', W: 3, status: 'dropped' }, { id: 's2', W: 1, status: 'active' }], [{ goalId: 'g1', k: 0.5 }], []) },
   ];
-  const checks = V.feelingChecks(checkGoals, checkAssessments, new Date('2026-10-17T00:00:00Z'));
-  await put('value-cases.json', { cases, feelingChecks: { goals: checkGoals, assessments: checkAssessments, now: '2026-10-17T00:00:00Z', expect: checks.map((c) => c.code) },
+  const refs = [ { phrase: 'A new pedestrian crossing near the school', v: 0.02 }, { phrase: 'A hug from my daughter', v: v1.v } ];
+  await put('value-cases.json', { cases,
+    references: { refs, queries: [ { v: 0.05, expect: V.nearestReference(refs, 0.05) }, { v: 0.002, expect: V.nearestReference(refs, 0.002) } ] },
+    retro: [ { assessments: [{ eventId: 'x', phase: 'realized' }], eventId: 'x', expect: true }, { assessments: [{ eventId: 'x', objectIndex: 0, phase: 'realized' }], eventId: 'x', expect: false }, { assessments: [], eventId: 'x', expect: false } ],
     planFactor: [
       { settings: { planCountDefault: 0 }, query: {}, expect: 0 },
-      { settings: { planCountDefault: 0, planCountBy: [{ counterpartyId: cpInst, factor: 0.5 }] }, query: { counterpartyId: cpInst }, expect: 0.5 },
-      { settings: { planCountDefault: 0.2, planCountBy: [{ counterpartyId: cpInst, factor: 0.5 }] }, query: { counterpartyId: cpMun }, expect: 0.2 },
-    ] });
+      { settings: { planCountDefault: 0, planCountBy: [{ contactId: 'm', factor: 0.5 }] }, query: { contactId: 'm', systemId: 's' }, expect: 0.5 },
+      { settings: { planCountDefault: 0.1, planCountBy: [{ systemId: 's', factor: 0.3 }, { contactId: 'm', systemId: 's', factor: 0.9 }] }, query: { contactId: 'm', systemId: 's' }, expect: 0.9 },
+      { settings: { planCountDefault: 0.1, planCountBy: [{ systemId: 's', factor: 0.3 }] }, query: { contactId: 'x', systemId: 's' }, expect: 0.3 },
+    ],
+    requestBlocking: [
+      { settings: { requests: { blockAll: true } }, body: reqTeeth, from: sp.address, expect: true },
+      { settings: { requests: { blockSystems: ['sys-city'] } }, systems: [{ rootId: 'sys-city', body: { title: 'City', registryUrl: REG } }], body: reqCity, from: sm.address, expect: true },
+      { settings: { requests: { blockSystems: ['sys-city'] } }, systems: [{ rootId: 'sys-city', body: { title: 'City', registryUrl: REG } }], body: reqTeeth, from: sp.address, expect: false },
+      { settings: { requests: { blockContacts: ['c-maker'] } }, contacts: [{ rootId: 'c-maker', body: { address: sp.address } }], body: reqTeeth, from: sp.address, expect: true },
+    ].map((x) => ({ ...x, got: C.requestBlocked(x.settings, x.body, x.from, x.contacts || [], x.systems || []) })),
+    addresses: [ { text: sa.address, expect: { address: sa.address } }, { text: C.addressLink(sm.address, { name: 'Example Municipality', kind: 'state' }), expect: { address: sm.address, name: 'Example Municipality', kind: 'state' } }, { text: 'not an address', expect: null } ],
+  });
   add('value-cases.json', null, { recompute: true });
-
   await put('manifest.json', manifest);
   log('done: ' + manifest.fixtures.length + ' fixtures', 'ok');
   window.__done = true;
 }
 
-document.getElementById('run').addEventListener('click', () => run().catch((e) => { log('ERROR ' + e.message, 'bad'); window.__error = e.message; }));
+document.getElementById('run').addEventListener('click', () => run().catch((e) => { log('ERROR ' + e.message, 'bad'); window.__error = e.message; console.error(e); }));
 </script>
 </body>
 </html>

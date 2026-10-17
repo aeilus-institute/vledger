@@ -1,0 +1,52 @@
+openapi: 3.1.0
+info:
+  title: aevri.vledger relay
+  version: 1.0.0-d2
+  summary: Passes encrypted messages between wallets and keeps nothing (SPEC section 11).
+  license: { name: MIT, identifier: MIT }
+  description: |
+    A relay holds a message only until the addressed wallet picks it up, and never longer than 14 days. It cannot
+    read messages (they are encrypted to the recipient's exchange key), does not log content, and keeps only counts.
+    Senders may be anonymous. A relay MAY limit message size and rate per sender address or network.
+servers:
+  - url: https://aeilus.institute/relay/v1
+    description: ÆVRI relay (stage L3, not built yet)
+paths:
+  /policy:
+    get:
+      summary: The relay's own storage policy, shown by wallets before sending
+      responses:
+        '200':
+          description: Policy
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [maxHoldDays, logsContent, maxBytes]
+                properties:
+                  maxHoldDays: { type: integer, maximum: 14 }
+                  logsContent: { const: false }
+                  maxBytes: { type: integer }
+  /messages:
+    post:
+      summary: Hand over a message for its `to` address
+      requestBody: { required: true, content: { application/json: { schema: { $ref: 'https://aeilus.institute/schema/vledger/1/message.schema.json' } } } }
+      responses:
+        '202': { description: Accepted for delivery }
+        '413': { description: Too large }
+        '429': { description: Too many messages }
+  /challenge:
+    get:
+      summary: One-time challenge (5 minutes) for an address owner
+      responses:
+        '200': { description: Challenge, content: { application/json: { schema: { type: object, properties: { challenge: { type: string }, expiresAt: { type: string } } } } } }
+  /inbox/{address}:
+    get:
+      summary: Messages waiting for this address. Fetching deletes them from the relay
+      parameters:
+        - { name: address, in: path, required: true, schema: { type: string } }
+        - { name: X-Vledger-Challenge, in: header, required: true, schema: { type: string } }
+        - { name: X-Vledger-Proof, in: header, required: true, description: 'base64url Ed25519 signature of the challenge by the address key', schema: { type: string } }
+      responses:
+        '200': { description: Messages, content: { application/json: { schema: { type: array, items: { $ref: 'https://aeilus.institute/schema/vledger/1/message.schema.json' } } } } }
+        '403': { description: Proof does not match the address }

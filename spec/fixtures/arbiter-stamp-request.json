@@ -1,25 +1,25 @@
 {
-  "receiptDigest": "sha256:05d594483283fd99889fe8821ddbe50fe85c6b8e1552c2fbfc07064d975e9d6f",
+  "receiptDigest": "sha256:8e68480617d99ffe3506609cd74e95c56c0f6cde74045ea8d95cfbf1e083b224",
   "keys": [
     {
       "alg": "Ed25519",
-      "x": "30C9yfNzNl5LQg7pUH_xGvaODP4doFBeLPel4wl9PDc"
+      "x": "1orNr8BeFCs0Z-6sEFYSHTeB53tLZBrDtuY9ZYelSJQ"
     },
     {
       "alg": "Ed25519",
-      "x": "NZaxmJZy1D3YyMikLsTaZqY49rJACaW4NIHIPicjS1A"
+      "x": "gAakZO0_RFoZ6h9iHDSYzV7dXInkcIZm2EwFLtipmT0"
     }
   ],
   "signatures": [
     {
       "party": 0,
       "alg": "Ed25519",
-      "sig": "41wWrU-TkPsMkx8ijgUQJXsQCXkcyxxfzNETnzHIvsCDxQfUImhFwrXN2OBUBc1kWYqXN_vTizDhq04Kr2wcDg"
+      "sig": "1VZEuR9jte3HyIvVr6lYCztBY_n4NHljnlVufFJEkZZyCJBBymEAF4gLIR_zy4w4LsEelSnv-7rmsGqYg6K5Dw"
     },
     {
       "party": 1,
       "alg": "Ed25519",
-      "sig": "ZJuOEcApxerg0MEWUU6KXzysVWL6pE9CdVWRJJUd_VEnIIIla6Pyyi3bgHlMYFDC16B28fTeOxwxejDrFgaxAA"
+      "sig": "JrB12CtZV3MzSByUa2piibxq2bF4zuctvrqYV9ig5I9UtyaT_E_v2xmjq8crdnny-tt4liFIzhvQW57s73qPDw"
     }
   ]
 }

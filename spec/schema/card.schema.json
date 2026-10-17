@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aeilus.institute/schema/vledger/1/card.schema.json",
+  "title": "aevri.vledger 1.0-d2 signed wallet card",
+  "type": "object",
+  "required": [
+    "card",
+    "sig"
+  ],
+  "properties": {
+    "card": {
+      "type": "object",
+      "required": [
+        "type",
+        "version",
+        "address",
+        "kind",
+        "encKey",
+        "storage",
+        "updatedAt"
+      ],
+      "properties": {
+        "type": {
+          "const": "aevri.vledger.card"
+        },
+        "version": {
+          "const": 1
+        },
+        "address": {
+          "$ref": "common.schema.json#/$defs/address"
+        },
+        "kind": {
+          "enum": [
+            "person",
+            "organization",
+            "state",
+            "group",
+            "device"
+          ]
+        },
+        "name": {
+          "$ref": "common.schema.json#/$defs/line"
+        },
+        "encKey": {
+          "$ref": "common.schema.json#/$defs/ecJwk"
+        },
+        "inbox": {
+          "type": "string",
+          "pattern": "^https://"
+        },
+        "registryUrl": {
+          "type": "string",
+          "pattern": "^https://"
+        },
+        "storage": {
+          "$ref": "common.schema.json#/$defs/storagePolicy"
+        },
+        "updatedAt": {
+          "$ref": "common.schema.json#/$defs/time"
+        }
+      }
+    },
+    "sig": {
+      "$ref": "common.schema.json#/$defs/b64u"
+    }
+  }
+}

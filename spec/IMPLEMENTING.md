@@ -20,13 +20,18 @@ in `SPEC.md`.
 `fixtures/wallet-a.plain.json` holds the test passphrase, the test provider recovery key and the plain payloads.
 Your implementation conforms when it:
 
-- opens `wallet-a.vledger.json` with the passphrase and with the provider key and gets the same payloads;
+- opens `wallet-a.vledger.json` and `wallet-b.vledger.json` with their passphrases and gets the same payloads;
+- verifies the four cards and the municipality registry, and rejects the tampered card;
+- decrypts each message with the recipient wallet's exchange key, verifies the sender, and fails with any other wallet;
+- applies wallet A's request blocking: the City request is dropped, the toothpaste maker's request is not;
+- recomputes the analytics of wallet A (four confirmed events, the suggested one left out);
 - finds exactly one problem in `invalid-wallet-tampered.vledger.json`;
 - reports `matched` for `receipt-matched.json` and `receipt-binding.json`, and not for the one-signature and tampered
   receipts;
-- verifies the arbiter stamp and rulings, the profile and the named feedback;
+- verifies the arbiter stamp and rulings;
 - rejects the three `invalid-*` documents that are invalid by schema;
-- recomputes every `v`, the feeling checks and the plan factors in `value-cases.json`.
+- recomputes every `v`, `spentV` and efficiency, nearest references, the retro rule, plan factors, request blocking and
+  address parsing in `value-cases.json`.
 
 Run the independent checker to see the expected output:
 
@@ -52,7 +57,7 @@ ciphertext and the wrapped key, not hiding them. If you offer recovery, publish 
 
 ## 5. Be an arbiter
 
-Implement `openapi/arbiter.yaml`. Keep digests, key thumbprints and times. Check every signature before you stamp.
+Implement `openapi/arbiter.yaml` (and, for a relay, `openapi/relay.yaml`). Keep digests, key thumbprints and times. Check every signature before you stamp.
 Decide only when a matched receipt names your key in a `binding` mandate; otherwise attest or give an opinion and set
 `binding: false`.
 

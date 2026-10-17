@@ -3,77 +3,320 @@
   "$id": "https://aeilus.institute/schema/vledger/1/wallet.schema.json",
   "title": "aevri.vledger 1.0 wallet document (encrypted)",
   "type": "object",
-  "required": ["format", "version", "walletId", "createdAt", "keyring", "records"],
+  "required": [
+    "format",
+    "version",
+    "walletId",
+    "createdAt",
+    "keyring",
+    "records"
+  ],
   "properties": {
-    "format": { "const": "aevri.vledger" },
-    "version": { "type": "string", "pattern": "^1\\.[0-9]+$" },
-    "walletId": { "$ref": "common.schema.json#/$defs/uuid" },
-    "createdAt": { "$ref": "common.schema.json#/$defs/time" },
-    "keyring": { "$ref": "#/$defs/keyring" },
-    "records": { "type": "array", "items": { "oneOf": [ { "$ref": "#/$defs/envelope" }, { "$ref": "#/$defs/tombstone" } ] } },
-    "extensions": { "type": "object" }
+    "format": {
+      "const": "aevri.vledger"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^1\\.[0-9]+$"
+    },
+    "walletId": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    },
+    "createdAt": {
+      "$ref": "common.schema.json#/$defs/time"
+    },
+    "keyring": {
+      "$ref": "#/$defs/keyring"
+    },
+    "records": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/envelope"
+          },
+          {
+            "$ref": "#/$defs/tombstone"
+          }
+        ]
+      }
+    },
+    "extensions": {
+      "type": "object"
+    }
   },
   "$defs": {
     "keyring": {
-      "type": "object", "required": ["revision", "slots", "identity"],
+      "type": "object",
+      "required": [
+        "revision",
+        "slots",
+        "identity",
+        "exchange"
+      ],
       "properties": {
-        "revision": { "type": "integer", "minimum": 1 },
-        "slots": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/slot" },
-          "contains": { "type": "object", "properties": { "kind": { "const": "passphrase" } } } },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "slots": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/slot"
+          },
+          "contains": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "passphrase"
+              }
+            }
+          }
+        },
         "identity": {
-          "type": "object", "required": ["publicKey", "wrap"],
-          "properties": { "publicKey": { "$ref": "common.schema.json#/$defs/publicKey" }, "wrap": { "$ref": "common.schema.json#/$defs/wrap" } }
+          "type": "object",
+          "required": [
+            "publicKey",
+            "wrap"
+          ],
+          "properties": {
+            "publicKey": {
+              "$ref": "common.schema.json#/$defs/publicKey"
+            },
+            "wrap": {
+              "$ref": "common.schema.json#/$defs/wrap"
+            }
+          }
+        },
+        "exchange": {
+          "type": "object",
+          "required": [
+            "publicJwk",
+            "wrap"
+          ],
+          "properties": {
+            "publicJwk": {
+              "$ref": "common.schema.json#/$defs/ecJwk"
+            },
+            "wrap": {
+              "$ref": "common.schema.json#/$defs/wrap"
+            }
+          }
         }
       }
     },
     "slot": {
-      "type": "object", "required": ["id", "kind", "wrap"],
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "wrap"
+      ],
       "properties": {
-        "id": { "type": "string", "pattern": "^[a-z0-9-]{1,32}$" },
-        "kind": { "enum": ["passphrase", "device", "provider-recovery", "recovery-code"] },
-        "wrap": { "$ref": "common.schema.json#/$defs/wrap" },
-        "kdf": { "$ref": "#/$defs/kdf" },
-        "providerId": { "type": "string", "maxLength": 200 },
-        "keyId": { "type": "string", "maxLength": 200 },
-        "epk": { "$ref": "common.schema.json#/$defs/ecJwk" }
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]{1,32}$"
+        },
+        "kind": {
+          "enum": [
+            "passphrase",
+            "device",
+            "provider-recovery",
+            "recovery-code"
+          ]
+        },
+        "wrap": {
+          "$ref": "common.schema.json#/$defs/wrap"
+        },
+        "kdf": {
+          "$ref": "#/$defs/kdf"
+        },
+        "providerId": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "keyId": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "epk": {
+          "$ref": "common.schema.json#/$defs/ecJwk"
+        }
       },
       "allOf": [
-        { "if": { "properties": { "kind": { "enum": ["passphrase", "recovery-code"] } } }, "then": { "required": ["kdf"] } },
-        { "if": { "properties": { "kind": { "const": "provider-recovery" } } }, "then": { "required": ["providerId", "keyId", "epk"] } }
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "passphrase",
+                  "recovery-code"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "kdf"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "provider-recovery"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "providerId",
+              "keyId",
+              "epk"
+            ]
+          }
+        }
       ]
     },
     "kdf": {
       "oneOf": [
-        { "type": "object", "required": ["name", "hash", "iterations", "salt"],
-          "properties": { "name": { "const": "PBKDF2" }, "hash": { "const": "SHA-256" }, "iterations": { "type": "integer", "minimum": 600000 }, "salt": { "$ref": "common.schema.json#/$defs/b64u", "minLength": 22 } } },
-        { "type": "object", "required": ["name", "memoryKiB", "passes", "parallelism", "salt"],
-          "properties": { "name": { "const": "argon2id" }, "memoryKiB": { "type": "integer", "minimum": 19456 }, "passes": { "type": "integer", "minimum": 2 }, "parallelism": { "type": "integer", "minimum": 1 }, "salt": { "$ref": "common.schema.json#/$defs/b64u", "minLength": 22 } } }
+        {
+          "type": "object",
+          "required": [
+            "name",
+            "hash",
+            "iterations",
+            "salt"
+          ],
+          "properties": {
+            "name": {
+              "const": "PBKDF2"
+            },
+            "hash": {
+              "const": "SHA-256"
+            },
+            "iterations": {
+              "type": "integer",
+              "minimum": 600000
+            },
+            "salt": {
+              "$ref": "common.schema.json#/$defs/b64u",
+              "minLength": 22
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "name",
+            "memoryKiB",
+            "passes",
+            "parallelism",
+            "salt"
+          ],
+          "properties": {
+            "name": {
+              "const": "argon2id"
+            },
+            "memoryKiB": {
+              "type": "integer",
+              "minimum": 19456
+            },
+            "passes": {
+              "type": "integer",
+              "minimum": 2
+            },
+            "parallelism": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "salt": {
+              "$ref": "common.schema.json#/$defs/b64u",
+              "minLength": 22
+            }
+          }
+        }
       ]
     },
     "link": {
       "type": "object",
       "properties": {
-        "id": { "$ref": "common.schema.json#/$defs/uuid" },
-        "seq": { "type": "integer", "minimum": 1 },
-        "prevHash": { "$ref": "common.schema.json#/$defs/sha256" },
-        "ctHash": { "$ref": "common.schema.json#/$defs/sha256" }
+        "id": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "prevHash": {
+          "$ref": "common.schema.json#/$defs/sha256"
+        },
+        "ctHash": {
+          "$ref": "common.schema.json#/$defs/sha256"
+        }
       }
     },
     "envelope": {
-      "allOf": [ { "$ref": "#/$defs/link" } ],
-      "type": "object", "required": ["id", "seq", "prevHash", "rk", "iv", "ct", "ctHash"],
+      "allOf": [
+        {
+          "$ref": "#/$defs/link"
+        }
+      ],
+      "type": "object",
+      "required": [
+        "id",
+        "seq",
+        "prevHash",
+        "rk",
+        "iv",
+        "ct",
+        "ctHash"
+      ],
       "properties": {
-        "id": true, "seq": true, "prevHash": true, "ctHash": true,
-        "rk": { "$ref": "common.schema.json#/$defs/wrap" },
-        "iv": { "$ref": "common.schema.json#/$defs/b64u", "minLength": 16, "maxLength": 16 },
-        "ct": { "$ref": "common.schema.json#/$defs/b64u", "minLength": 22 }
+        "id": true,
+        "seq": true,
+        "prevHash": true,
+        "ctHash": true,
+        "rk": {
+          "$ref": "common.schema.json#/$defs/wrap"
+        },
+        "iv": {
+          "$ref": "common.schema.json#/$defs/b64u",
+          "minLength": 16,
+          "maxLength": 16
+        },
+        "ct": {
+          "$ref": "common.schema.json#/$defs/b64u",
+          "minLength": 22
+        }
       },
       "additionalProperties": false
     },
     "tombstone": {
-      "allOf": [ { "$ref": "#/$defs/link" } ],
-      "type": "object", "required": ["id", "seq", "prevHash", "ctHash", "erased"],
-      "properties": { "id": true, "seq": true, "prevHash": true, "ctHash": true, "erased": { "$ref": "common.schema.json#/$defs/time" } },
+      "allOf": [
+        {
+          "$ref": "#/$defs/link"
+        }
+      ],
+      "type": "object",
+      "required": [
+        "id",
+        "seq",
+        "prevHash",
+        "ctHash",
+        "erased"
+      ],
+      "properties": {
+        "id": true,
+        "seq": true,
+        "prevHash": true,
+        "ctHash": true,
+        "erased": {
+          "$ref": "common.schema.json#/$defs/time"
+        }
+      },
       "additionalProperties": false
     }
   }

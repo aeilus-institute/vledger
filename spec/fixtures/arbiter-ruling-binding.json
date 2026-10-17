@@ -1,20 +1,20 @@
 {
   "type": "aevri.vledger.ruling",
-  "caseId": "01a146c3-bd1f-78a0-afcc-c90dd2d4e408",
-  "receiptDigest": "sha256:c2c728edab019f748de8fef43772235bbfc41e2b5b3ce4c1e8c690da3fdf2a01",
+  "caseId": "01a1496d-5434-7a79-bfa8-aa95a55bfa0d",
+  "receiptDigest": "sha256:b69fc044f181c9b73c31950c966470d596864d0a927bed0e3b56d08c566d0569",
   "mode": "binding",
   "binding": true,
-  "decision": "The pen was a gift.",
+  "decision": "The event happened as recorded.",
   "status": "matched",
-  "reasons": "Both parties agreed in the hearing that no return was discussed.",
+  "reasons": "Both parties confirmed.",
   "issuedAt": "2026-10-20T10:00:00Z",
   "arbiter": {
     "url": "https://aeilus.institute/arbiter/",
     "key": {
       "alg": "Ed25519",
-      "x": "lbEewrwGYn2zM3-YfvGoo-7elVC-mRjQptkbtqNM1tk"
+      "x": "MLWh5i_wbnfdf1j1kpMJWZWfP19FQHi9BkiSwEa4T80"
     },
     "name": "ÆVRI arbiter (test key)"
   },
-  "sig": "KQPgduqUnsIYe0_-l3MkMzELxNtLvFRjfq-VTpxmU3sL4Z8Ds8vUvVN3knY3fIK9fzS6qymJ2GB5KPqIU97sCw"
+  "sig": "0wGQ29Qg-A8R5sIewBggUHnrR163sJU-ATfxXhea5RI1J8F2Hk2P656cFrIKrY7Z-lxHHxtUzqwiTMHssgGWAA"
 }

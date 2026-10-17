@@ -3,34 +3,209 @@
   "$id": "https://aeilus.institute/schema/vledger/1/common.schema.json",
   "title": "aevri.vledger 1.0 common definitions",
   "$defs": {
-    "uuid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
-    "time": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$" },
-    "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
-    "b64u": { "type": "string", "pattern": "^[A-Za-z0-9_-]*$" },
-    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "time": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$"
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "b64u": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]*$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
     "wrap": {
-      "type": "object", "required": ["iv", "ct"], "additionalProperties": false,
-      "properties": { "iv": { "$ref": "#/$defs/b64u", "minLength": 16, "maxLength": 16 }, "ct": { "$ref": "#/$defs/b64u", "minLength": 22 } }
+      "type": "object",
+      "required": [
+        "iv",
+        "ct"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "iv": {
+          "$ref": "#/$defs/b64u",
+          "minLength": 16,
+          "maxLength": 16
+        },
+        "ct": {
+          "$ref": "#/$defs/b64u",
+          "minLength": 22
+        }
+      }
     },
     "publicKey": {
       "oneOf": [
-        { "type": "object", "required": ["alg", "x"], "properties": { "alg": { "const": "Ed25519" }, "x": { "$ref": "#/$defs/b64u", "minLength": 43, "maxLength": 43 } }, "additionalProperties": false },
-        { "type": "object", "required": ["alg", "jwk"], "properties": { "alg": { "const": "ES256" }, "jwk": { "$ref": "#/$defs/ecJwk" } }, "additionalProperties": false }
+        {
+          "type": "object",
+          "required": [
+            "alg",
+            "x"
+          ],
+          "properties": {
+            "alg": {
+              "const": "Ed25519"
+            },
+            "x": {
+              "$ref": "#/$defs/b64u",
+              "minLength": 43,
+              "maxLength": 43
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "alg",
+            "jwk"
+          ],
+          "properties": {
+            "alg": {
+              "const": "ES256"
+            },
+            "jwk": {
+              "$ref": "#/$defs/ecJwk"
+            }
+          },
+          "additionalProperties": false
+        }
       ]
     },
     "ecJwk": {
-      "type": "object", "required": ["kty", "crv", "x", "y"],
-      "properties": { "kty": { "const": "EC" }, "crv": { "const": "P-256" }, "x": { "$ref": "#/$defs/b64u" }, "y": { "$ref": "#/$defs/b64u" } }
+      "type": "object",
+      "required": [
+        "kty",
+        "crv",
+        "x",
+        "y"
+      ],
+      "properties": {
+        "kty": {
+          "const": "EC"
+        },
+        "crv": {
+          "const": "P-256"
+        },
+        "x": {
+          "$ref": "#/$defs/b64u"
+        },
+        "y": {
+          "$ref": "#/$defs/b64u"
+        }
+      }
     },
     "signature": {
-      "type": "object", "required": ["alg", "sig"],
-      "properties": { "party": { "type": "integer", "minimum": 0 }, "alg": { "enum": ["Ed25519", "ES256"] }, "sig": { "$ref": "#/$defs/b64u", "minLength": 86, "maxLength": 86 } }
+      "type": "object",
+      "required": [
+        "alg",
+        "sig"
+      ],
+      "properties": {
+        "party": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "alg": {
+          "enum": [
+            "Ed25519",
+            "ES256"
+          ]
+        },
+        "sig": {
+          "$ref": "#/$defs/b64u",
+          "minLength": 86,
+          "maxLength": 86
+        }
+      }
     },
     "arbiterRef": {
-      "type": "object", "required": ["url", "key"],
-      "properties": { "url": { "type": "string", "pattern": "^https://" }, "key": { "$ref": "#/$defs/publicKey" }, "name": { "type": "string", "maxLength": 200 } }
+      "type": "object",
+      "required": [
+        "url",
+        "key"
+      ],
+      "properties": {
+        "url": {
+          "type": "string",
+          "pattern": "^https://"
+        },
+        "key": {
+          "$ref": "#/$defs/publicKey"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 200
+        }
+      }
     },
-    "text": { "type": "string", "maxLength": 2000 },
-    "line": { "type": "string", "maxLength": 300 }
+    "text": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "line": {
+      "type": "string",
+      "maxLength": 300
+    },
+    "address": {
+      "type": "string",
+      "pattern": "^vw1:[A-Za-z0-9_-]{43}$"
+    },
+    "storagePolicy": {
+      "type": "object",
+      "required": [
+        "stores",
+        "publishes"
+      ],
+      "properties": {
+        "stores": {
+          "type": "boolean"
+        },
+        "purpose": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "retentionDays": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "publishes": {
+          "enum": [
+            "no",
+            "anonymous",
+            "named",
+            "sender-choice"
+          ]
+        }
+      }
+    },
+    "registryRef": {
+      "type": "object",
+      "required": [
+        "registryUrl",
+        "itemId"
+      ],
+      "properties": {
+        "registryUrl": {
+          "type": "string",
+          "pattern": "^https://"
+        },
+        "itemId": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "owner": {
+          "$ref": "#/$defs/address"
+        }
+      }
+    }
   }
 }

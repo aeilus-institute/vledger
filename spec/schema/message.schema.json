@@ -1,0 +1,323 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aeilus.institute/schema/vledger/1/message.schema.json",
+  "title": "aevri.vledger 1.0-d2 encrypted message between wallets",
+  "type": "object",
+  "required": [
+    "type",
+    "version",
+    "id",
+    "to",
+    "sentAt",
+    "epk",
+    "iv",
+    "ct"
+  ],
+  "properties": {
+    "type": {
+      "const": "aevri.vledger.message"
+    },
+    "version": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    },
+    "to": {
+      "$ref": "common.schema.json#/$defs/address"
+    },
+    "from": {
+      "$ref": "common.schema.json#/$defs/address"
+    },
+    "sentAt": {
+      "$ref": "common.schema.json#/$defs/time"
+    },
+    "epk": {
+      "$ref": "common.schema.json#/$defs/ecJwk"
+    },
+    "iv": {
+      "$ref": "common.schema.json#/$defs/b64u",
+      "minLength": 16,
+      "maxLength": 16
+    },
+    "ct": {
+      "$ref": "common.schema.json#/$defs/b64u"
+    },
+    "sig": {
+      "$ref": "common.schema.json#/$defs/b64u"
+    }
+  },
+  "dependentRequired": {
+    "from": [
+      "sig"
+    ],
+    "sig": [
+      "from"
+    ]
+  },
+  "$defs": {
+    "body": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "event",
+            "phase",
+            "publish"
+          ],
+          "properties": {
+            "kind": {
+              "const": "share"
+            },
+            "event": {
+              "type": "object",
+              "required": [
+                "actor",
+                "action"
+              ],
+              "properties": {
+                "actor": {
+                  "$ref": "common.schema.json#/$defs/line"
+                },
+                "action": {
+                  "$ref": "common.schema.json#/$defs/line"
+                },
+                "objects": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "common.schema.json#/$defs/line"
+                  }
+                },
+                "affected": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "common.schema.json#/$defs/line"
+                  }
+                },
+                "occurredAt": {
+                  "oneOf": [
+                    {
+                      "$ref": "common.schema.json#/$defs/time"
+                    },
+                    {
+                      "$ref": "common.schema.json#/$defs/date"
+                    }
+                  ]
+                },
+                "registryRef": {
+                  "$ref": "common.schema.json#/$defs/registryRef"
+                }
+              }
+            },
+            "phase": {
+              "enum": [
+                "realized",
+                "retro"
+              ]
+            },
+            "gained": {
+              "type": "array",
+              "items": {
+                "$ref": "common.schema.json#/$defs/line"
+              }
+            },
+            "lost": {
+              "type": "array",
+              "items": {
+                "$ref": "common.schema.json#/$defs/line"
+              }
+            },
+            "v": {
+              "type": "number"
+            },
+            "spentV": {
+              "type": "number",
+              "minimum": 0
+            },
+            "planGap": {
+              "enum": [
+                "above-plan",
+                "as-planned",
+                "below-plan",
+                "harm",
+                "unknown"
+              ]
+            },
+            "publish": {
+              "enum": [
+                "no",
+                "anonymous",
+                "named"
+              ]
+            },
+            "system": {
+              "$ref": "common.schema.json#/$defs/line"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "event"
+          ],
+          "properties": {
+            "kind": {
+              "const": "request"
+            },
+            "event": {
+              "type": "object",
+              "required": [
+                "actor",
+                "action"
+              ],
+              "properties": {
+                "actor": {
+                  "$ref": "common.schema.json#/$defs/line"
+                },
+                "action": {
+                  "$ref": "common.schema.json#/$defs/line"
+                },
+                "objects": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "common.schema.json#/$defs/line"
+                  }
+                },
+                "affected": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "common.schema.json#/$defs/line"
+                  }
+                },
+                "occurredAt": {
+                  "oneOf": [
+                    {
+                      "$ref": "common.schema.json#/$defs/time"
+                    },
+                    {
+                      "$ref": "common.schema.json#/$defs/date"
+                    }
+                  ]
+                },
+                "registryRef": {
+                  "$ref": "common.schema.json#/$defs/registryRef"
+                }
+              }
+            },
+            "system": {
+              "$ref": "common.schema.json#/$defs/line"
+            },
+            "systemRegistryUrl": {
+              "type": "string",
+              "pattern": "^https://"
+            },
+            "plan": {
+              "type": "object",
+              "properties": {
+                "promise": {
+                  "$ref": "common.schema.json#/$defs/text"
+                },
+                "plannedV": {
+                  "type": "number",
+                  "minimum": -1,
+                  "maximum": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "receipt"
+          ],
+          "properties": {
+            "kind": {
+              "const": "event-offer"
+            },
+            "receipt": {
+              "$ref": "receipt.schema.json"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "card"
+          ],
+          "properties": {
+            "kind": {
+              "const": "card"
+            },
+            "card": {
+              "$ref": "card.schema.json"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "events"
+          ],
+          "properties": {
+            "kind": {
+              "const": "suggestion"
+            },
+            "source": {
+              "$ref": "common.schema.json#/$defs/line"
+            },
+            "events": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": [
+                  "actor",
+                  "action"
+                ],
+                "properties": {
+                  "actor": {
+                    "$ref": "common.schema.json#/$defs/line"
+                  },
+                  "action": {
+                    "$ref": "common.schema.json#/$defs/line"
+                  },
+                  "objects": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "common.schema.json#/$defs/line"
+                    }
+                  },
+                  "affected": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "common.schema.json#/$defs/line"
+                    }
+                  },
+                  "occurredAt": {
+                    "oneOf": [
+                      {
+                        "$ref": "common.schema.json#/$defs/time"
+                      },
+                      {
+                        "$ref": "common.schema.json#/$defs/date"
+                      }
+                    ]
+                  },
+                  "registryRef": {
+                    "$ref": "common.schema.json#/$defs/registryRef"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
