@@ -1,0 +1,104 @@
+openapi: 3.1.0
+info:
+  title: aevri.vledger storage provider
+  version: 1.0.0-d1
+  summary: Stores encrypted value wallets. Never receives plain text or keys (SPEC section 8).
+  license: { name: MIT, identifier: MIT }
+  description: |
+    Any provider (the institute, a self-hosted server, an adapter over a Git repository or WebDAV) can implement this.
+    Authentication is the provider's own (an account session, a bearer token); the wallet format does not define it.
+    A provider sees wallet ids, record ids, sequence numbers, sizes and its own times only.
+    Errors use application/problem+json with codes `vledger/<code>`.
+servers:
+  - url: https://aeilus.institute/api/v1/vledger
+    description: ÆVRI as an optional backup provider (L2, not built yet)
+paths:
+  /wallets/{walletId}:
+    parameters: [ { $ref: '#/components/parameters/walletId' } ]
+    delete:
+      summary: Delete the whole wallet (keyring, envelopes, tombstones, recovery material)
+      responses:
+        '204': { description: Deleted }
+        '404': { $ref: '#/components/responses/problem' }
+  /wallets/{walletId}/keyring:
+    parameters: [ { $ref: '#/components/parameters/walletId' } ]
+    get:
+      summary: Read the keyring
+      responses:
+        '200': { description: Keyring, headers: { ETag: { schema: { type: string } } }, content: { application/json: { schema: { $ref: 'https://aeilus.institute/schema/vledger/1/wallet.schema.json#/$defs/keyring' } } } }
+        '404': { $ref: '#/components/responses/problem' }
+    put:
+      summary: Create or replace the keyring (If-Match on replace, If-None-Match "*" on create)
+      parameters:
+        - { name: If-Match, in: header, schema: { type: string } }
+        - { name: If-None-Match, in: header, schema: { type: string } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: 'https://aeilus.institute/schema/vledger/1/wallet.schema.json#/$defs/keyring' } } } }
+      responses:
+        '204': { description: Stored }
+        '412': { $ref: '#/components/responses/problem' }
+  /wallets/{walletId}/records:
+    parameters: [ { $ref: '#/components/parameters/walletId' } ]
+    get:
+      summary: Envelopes and tombstones after a sequence number, in order
+      parameters:
+        - { name: sinceSeq, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 1000, default: 500 } }
+      responses:
+        '200':
+          description: Page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, more]
+                properties:
+                  items: { type: array, items: { oneOf: [ { $ref: 'https://aeilus.institute/schema/vledger/1/wallet.schema.json#/$defs/envelope' }, { $ref: 'https://aeilus.institute/schema/vledger/1/wallet.schema.json#/$defs/tombstone' } ] } }
+                  more: { type: boolean }
+    post:
+      summary: Append envelopes. An id is accepted once; a seq already taken returns 409 and the client rebases (SPEC 8)
+      parameters:
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: array, maxItems: 500, items: { $ref: 'https://aeilus.institute/schema/vledger/1/wallet.schema.json#/$defs/envelope' } } } }
+      responses:
+        '204': { description: Appended }
+        '409': { $ref: '#/components/responses/problem' }
+        '413': { $ref: '#/components/responses/problem' }
+  /wallets/{walletId}/records/{recordId}:
+    parameters:
+      - { $ref: '#/components/parameters/walletId' }
+      - { name: recordId, in: path, required: true, schema: { type: string } }
+    put:
+      summary: Erase - replace an envelope with its tombstone. The provider MUST delete the ciphertext and wrapped key
+      requestBody: { required: true, content: { application/json: { schema: { $ref: 'https://aeilus.institute/schema/vledger/1/wallet.schema.json#/$defs/tombstone' } } } }
+      responses:
+        '204': { description: Erased }
+        '422': { $ref: '#/components/responses/problem' }
+  /recovery:
+    get:
+      summary: The provider's recovery offer (SPEC 4.4) - public key and the published procedure
+      security: []
+      responses:
+        '200':
+          description: Recovery offer
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [providerId, keyId, publicJwk, procedureUrl, delayDays, notifies]
+                properties:
+                  providerId: { type: string }
+                  keyId: { type: string }
+                  publicJwk: { $ref: 'https://aeilus.institute/schema/vledger/1/common.schema.json#/$defs/ecJwk' }
+                  procedureUrl: { type: string, format: uri }
+                  delayDays: { type: integer, minimum: 0 }
+                  notifies: { type: array, items: { enum: [devices, email, contacts] } }
+                  minimumAge: { type: integer, description: 'For example 18 (TZ D-7)' }
+components:
+  parameters:
+    walletId: { name: walletId, in: path, required: true, schema: { type: string } }
+  responses:
+    problem:
+      description: Error
+      content: { application/problem+json: { schema: { type: object, properties: { type: { type: string }, title: { type: string }, code: { type: string }, traceId: { type: string } } } } }

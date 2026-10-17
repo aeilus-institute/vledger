@@ -1,0 +1,18 @@
+{
+  "type": "aevri.vledger.feedback",
+  "version": 1,
+  "feedbackId": "01a146c3-bd2f-7848-8921-7ed7e66f8ad0",
+  "profileId": "https://aeilus.institute/vledger/profile.json",
+  "elementId": "value-assessment-methodology",
+  "phase": "received",
+  "gained": [
+    "A clear checklist"
+  ],
+  "lost": [
+    "20 minutes"
+  ],
+  "gap": "below-plan",
+  "v": 0.005,
+  "anonymous": true,
+  "sentAt": "2026-10-17"
+}

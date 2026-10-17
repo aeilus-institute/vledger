@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aeilus.institute/schema/vledger/1/payload.schema.json",
+  "title": "aevri.vledger 1.0 record payload (decrypted)",
+  "type": "object",
+  "required": ["kind", "createdAt", "source", "body"],
+  "properties": {
+    "kind": { "enum": ["counterparty", "element-type", "exchange", "plan", "assessment", "goal", "fact", "settings", "grant", "revocation", "disclosure", "import", "note"] },
+    "createdAt": { "$ref": "common.schema.json#/$defs/time" },
+    "supersedes": { "oneOf": [ { "$ref": "common.schema.json#/$defs/uuid" }, { "type": "null" } ] },
+    "source": { "enum": ["manual", "import-file", "counterparty", "profile", "vet", "vss", "aevri.site", "aevri.vvp"] },
+    "retainUntil": { "oneOf": [ { "$ref": "common.schema.json#/$defs/date" }, { "type": "null" } ] },
+    "body": { "type": "object" }
+  },
+  "if": { "properties": { "body": { "required": ["withdrawn"] } } },
+  "then": { "required": ["supersedes"], "properties": { "body": { "properties": { "withdrawn": { "const": true } } } } },
+  "else": { "allOf": [
+    { "if": { "properties": { "kind": { "const": "counterparty" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/counterparty" } } } },
+    { "if": { "properties": { "kind": { "const": "element-type" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/elementType" } } } },
+    { "if": { "properties": { "kind": { "const": "exchange" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/exchange" } } } },
+    { "if": { "properties": { "kind": { "const": "plan" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/plan" } } } },
+    { "if": { "properties": { "kind": { "const": "assessment" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/assessment" } } } },
+    { "if": { "properties": { "kind": { "const": "goal" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/goal" } } } },
+    { "if": { "properties": { "kind": { "const": "fact" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/fact" } } } },
+    { "if": { "properties": { "kind": { "const": "settings" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/settings" } } } },
+    { "if": { "properties": { "kind": { "const": "grant" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/grant" } } } },
+    { "if": { "properties": { "kind": { "const": "revocation" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/revocation" } } } },
+    { "if": { "properties": { "kind": { "const": "disclosure" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/disclosure" } } } },
+    { "if": { "properties": { "kind": { "const": "import" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/import" } } } },
+    { "if": { "properties": { "kind": { "const": "note" } } }, "then": { "properties": { "body": { "$ref": "#/$defs/note" } } } }
+  ] },
+  "$defs": {
+    "id": { "$ref": "common.schema.json#/$defs/uuid" },
+    "element": {
+      "type": "object", "required": ["label"],
+      "properties": {
+        "label": { "$ref": "common.schema.json#/$defs/line" },
+        "typeId": { "$ref": "#/$defs/id" },
+        "quantity": { "type": "number" },
+        "unit": { "type": "string", "maxLength": 40 },
+        "note": { "$ref": "common.schema.json#/$defs/text" },
+        "salt": { "$ref": "common.schema.json#/$defs/b64u" }
+      }
+    },
+    "elementRef": {
+      "oneOf": [
+        { "type": "object", "required": ["exchangeId", "side", "index"], "properties": { "exchangeId": { "$ref": "#/$defs/id" }, "side": { "enum": ["given", "received"] }, "index": { "type": "integer", "minimum": 0 } }, "additionalProperties": false },
+        { "type": "object", "required": ["profileRef", "elementId"], "properties": { "profileRef": { "type": "string", "maxLength": 500 }, "elementId": { "type": "string", "maxLength": 100 } }, "additionalProperties": false }
+      ]
+    },
+    "counterparty": {
+      "type": "object", "required": ["type", "name"],
+      "properties": {
+        "type": { "enum": ["self", "person", "organization", "state", "group", "unknown"] },
+        "name": { "$ref": "common.schema.json#/$defs/line" },
+        "note": { "$ref": "common.schema.json#/$defs/text" },
+        "publicKey": { "$ref": "common.schema.json#/$defs/publicKey" },
+        "profileUrl": { "type": "string", "pattern": "^https://" },
+        "arbiter": { "$ref": "common.schema.json#/$defs/arbiterRef" },
+        "members": { "type": "array", "items": { "$ref": "#/$defs/id" } }
+      }
+    },
+    "elementType": {
+      "type": "object", "required": ["name", "category"],
+      "properties": {
+        "name": { "$ref": "common.schema.json#/$defs/line" },
+        "category": { "enum": ["thing", "service", "information", "time", "money", "right", "decision", "relation", "other"] },
+        "polarityHint": { "enum": ["value", "anti-value"] },
+        "vssRef": { "type": "object", "properties": { "schemaId": { "type": "string" }, "elementTypeId": { "type": "string" } } }
+      }
+    },
+    "exchange": {
+      "type": "object", "required": ["counterpartyId", "given", "received", "occurredAt", "status"],
+      "properties": {
+        "counterpartyId": { "$ref": "#/$defs/id" },
+        "given": { "type": "array", "items": { "$ref": "#/$defs/element" } },
+        "received": { "type": "array", "items": { "$ref": "#/$defs/element" } },
+        "occurredAt": { "oneOf": [ { "$ref": "common.schema.json#/$defs/time" }, { "$ref": "common.schema.json#/$defs/date" } ] },
+        "approx": { "type": "boolean" },
+        "status": { "enum": ["recorded", "offered", "matched", "disputed", "withdrawn"] },
+        "receipt": { "$ref": "receipt.schema.json" },
+        "stamps": { "type": "array", "items": { "$ref": "arbiter.schema.json#/$defs/stamp" } },
+        "rulings": { "type": "array", "items": { "$ref": "arbiter.schema.json#/$defs/ruling" } }
+      },
+      "anyOf": [ { "properties": { "given": { "minItems": 1 } } }, { "properties": { "received": { "minItems": 1 } } } ]
+    },
+    "plan": {
+      "type": "object", "required": ["elementRef", "authorCounterpartyId", "promise"],
+      "properties": {
+        "exchangeId": { "$ref": "#/$defs/id" },
+        "elementRef": { "$ref": "#/$defs/elementRef" },
+        "authorCounterpartyId": { "$ref": "#/$defs/id" },
+        "promise": { "$ref": "common.schema.json#/$defs/text" },
+        "goalCategory": { "type": "string", "maxLength": 100 },
+        "plannedV": { "type": "number", "minimum": -1, "maximum": 1 },
+        "profileRef": { "type": "string", "maxLength": 500 }
+      }
+    },
+    "assessment": {
+      "type": "object", "required": ["phase", "confidence"],
+      "properties": {
+        "exchangeId": { "$ref": "#/$defs/id" },
+        "elementRef": { "$ref": "#/$defs/elementRef" },
+        "phase": { "enum": ["expected", "received", "retro"] },
+        "gained": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/line" } },
+        "lost": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/line" } },
+        "ownScore": { "type": "object", "required": ["value"], "properties": { "value": { "type": "number" }, "unit": { "type": "string", "maxLength": 40 } } },
+        "contributions": { "type": "array", "items": { "type": "object", "required": ["goalId"],
+          "properties": { "goalId": { "$ref": "#/$defs/id" }, "c": { "type": "number" }, "k": { "type": "number" } },
+          "anyOf": [ { "required": ["c"] }, { "required": ["k"] } ] } },
+        "v": { "type": "number" },
+        "planCount": { "type": "number", "minimum": 0, "maximum": 1 },
+        "confidence": { "enum": ["low", "medium", "high"] },
+        "reasons": { "$ref": "common.schema.json#/$defs/text" },
+        "checkAfter": { "$ref": "common.schema.json#/$defs/date" },
+        "vet": { "type": "object", "required": ["snapshotHash"], "properties": { "boardId": { "type": "string" }, "resultId": { "type": "string" }, "snapshotHash": { "$ref": "common.schema.json#/$defs/sha256" } } }
+      }
+    },
+    "goal": {
+      "type": "object", "required": ["title", "S", "status"],
+      "properties": {
+        "title": { "$ref": "common.schema.json#/$defs/line" },
+        "why": { "$ref": "common.schema.json#/$defs/text" },
+        "signs": { "$ref": "common.schema.json#/$defs/text" },
+        "horizon": { "type": "string", "maxLength": 100 },
+        "S": { "type": "number", "exclusiveMinimum": 0 },
+        "N": { "type": "number", "exclusiveMinimum": 0 },
+        "unit": { "type": "string", "maxLength": 40 },
+        "status": { "enum": ["active", "reached", "dropped"] },
+        "factIds": { "type": "array", "items": { "$ref": "#/$defs/id" } }
+      }
+    },
+    "fact": {
+      "type": "object", "required": ["text", "certainty"],
+      "properties": {
+        "topic": { "type": "string", "maxLength": 100 },
+        "text": { "$ref": "common.schema.json#/$defs/text" },
+        "certainty": { "enum": ["low", "medium", "high"] },
+        "exploring": { "type": "boolean" },
+        "goalIds": { "type": "array", "items": { "$ref": "#/$defs/id" } }
+      }
+    },
+    "settings": {
+      "type": "object",
+      "properties": {
+        "planCountDefault": { "type": "number", "minimum": 0, "maximum": 1, "default": 0 },
+        "planCountBy": { "type": "array", "items": { "type": "object", "required": ["factor"],
+          "properties": { "counterpartyId": { "$ref": "#/$defs/id" }, "typeId": { "$ref": "#/$defs/id" }, "factor": { "type": "number", "minimum": 0, "maximum": 1 } } } },
+        "arbiters": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/arbiterRef" } },
+        "providers": { "type": "array", "items": { "type": "object", "required": ["kind"], "properties": { "kind": { "enum": ["device", "file", "aevri", "github", "webdav", "s3", "custom"] }, "label": { "type": "string" }, "url": { "type": "string" } } } }
+      }
+    },
+    "grant": {
+      "type": "object", "required": ["recordIds", "recipient", "fields", "purpose"],
+      "properties": {
+        "recordIds": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/id" } },
+        "recipient": { "oneOf": [ { "$ref": "#/$defs/id" }, { "enum": ["public-anon", "public-named"] } ] },
+        "fields": { "type": "array", "items": { "type": "string" } },
+        "strip": { "type": "array", "items": { "enum": ["name", "age", "place", "free-text", "goals", "own-scale"] } },
+        "until": { "$ref": "common.schema.json#/$defs/date" },
+        "purpose": { "enum": ["feedback", "bilateral", "research-contribution", "personal"] }
+      }
+    },
+    "revocation": { "type": "object", "required": ["grantId"], "properties": { "grantId": { "$ref": "#/$defs/id" }, "reason": { "$ref": "common.schema.json#/$defs/line" } } },
+    "disclosure": { "type": "object", "required": ["grantId", "deliveredAt", "recipient", "contentHash"],
+      "properties": { "grantId": { "$ref": "#/$defs/id" }, "deliveredAt": { "$ref": "common.schema.json#/$defs/time" }, "recipient": { "type": "string" }, "contentHash": { "$ref": "common.schema.json#/$defs/sha256" } } },
+    "import": { "type": "object", "required": ["origin", "originId", "payload", "payloadHash"],
+      "properties": { "origin": { "enum": ["aevri.site", "aevri.vvp", "vet", "vss", "file"] }, "originId": { "type": "string" }, "payload": {}, "payloadHash": { "$ref": "common.schema.json#/$defs/sha256" } } },
+    "note": { "type": "object", "required": ["text"], "properties": { "text": { "$ref": "common.schema.json#/$defs/text" } } }
+  }
+}

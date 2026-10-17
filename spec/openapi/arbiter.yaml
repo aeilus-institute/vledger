@@ -1,0 +1,75 @@
+openapi: 3.1.0
+info:
+  title: aevri.vledger arbiter
+  version: 1.0.0-d1
+  summary: Stamps receipt digests, answers lookups by the parties, hears cases (SPEC section 10).
+  license: { name: MIT, identifier: MIT }
+  description: |
+    An arbiter keeps digests, key thumbprints and times. It sees the content of a receipt only when a party opens a case
+    and discloses it. Its power depends on the receipt's mandate: `attest` (confirm what was presented and when),
+    `opinion` (an expert opinion on request) or `binding` (a decision, only if every party signed a receipt naming this
+    arbiter in a binding mandate). Stamps and rulings are signed with the arbiter key over the JCS form of the object
+    without `sig`.
+servers:
+  - url: https://aeilus.institute/arbiter/v1
+    description: ÆVRI, the default arbiter for wallets made by ÆVRI tools (L3, not built yet)
+paths:
+  /key:
+    get:
+      summary: The arbiter's public key and rules
+      responses:
+        '200':
+          description: Key
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [key, rulesUrl]
+                properties:
+                  key: { $ref: 'https://aeilus.institute/schema/vledger/1/common.schema.json#/$defs/publicKey' }
+                  rulesUrl: { type: string, format: uri }
+                  modes: { type: array, items: { enum: [attest, opinion, binding] } }
+  /stamps:
+    post:
+      summary: Stamp a matched (or partly signed) receipt digest. The arbiter verifies every signature first
+      requestBody: { required: true, content: { application/json: { schema: { $ref: 'https://aeilus.institute/schema/vledger/1/arbiter.schema.json#/$defs/stampRequest' } } } }
+      responses:
+        '201': { description: Stamp, content: { application/json: { schema: { $ref: 'https://aeilus.institute/schema/vledger/1/arbiter.schema.json#/$defs/stamp' } } } }
+        '422': { description: A signature does not verify }
+  /stamps/{receiptDigest}:
+    get:
+      summary: Which stamps exist for a digest. Only a party may ask
+      parameters:
+        - { name: receiptDigest, in: path, required: true, schema: { type: string } }
+        - { name: X-Vledger-Challenge, in: header, required: true, description: 'Fresh challenge from GET /challenge', schema: { type: string } }
+        - { name: X-Vledger-Proof, in: header, required: true, description: 'base64url signature of the challenge by one of the party keys', schema: { type: string } }
+      responses:
+        '200': { description: Stamps, content: { application/json: { schema: { type: array, items: { $ref: 'https://aeilus.institute/schema/vledger/1/arbiter.schema.json#/$defs/stamp' } } } } }
+        '403': { description: Not a party }
+  /challenge:
+    get:
+      summary: A one-time challenge (valid 5 minutes) for party proofs
+      responses:
+        '200': { description: Challenge, content: { application/json: { schema: { type: object, properties: { challenge: { type: string }, expiresAt: { type: string } } } } } }
+  /cases:
+    post:
+      summary: Open a case. The claimant discloses the receipt; the arbiter checks the mandate and the signatures
+      requestBody: { required: true, content: { application/json: { schema: { $ref: 'https://aeilus.institute/schema/vledger/1/arbiter.schema.json#/$defs/case' } } } }
+      responses:
+        '202': { description: 'Case accepted; the ruling arrives later at /cases/{caseId}' }
+        '409': { description: Requested a binding decision but the receipt has no binding mandate naming this arbiter }
+  /cases/{caseId}:
+    get:
+      summary: Case status and, when issued, the ruling. Only parties (party proof headers as for stamps)
+      parameters:
+        - { name: caseId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Case
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { enum: [open, decided, declined] }
+                  ruling: { $ref: 'https://aeilus.institute/schema/vledger/1/arbiter.schema.json#/$defs/ruling' }

@@ -1,0 +1,25 @@
+{
+  "receiptDigest": "sha256:05d594483283fd99889fe8821ddbe50fe85c6b8e1552c2fbfc07064d975e9d6f",
+  "keys": [
+    {
+      "alg": "Ed25519",
+      "x": "30C9yfNzNl5LQg7pUH_xGvaODP4doFBeLPel4wl9PDc"
+    },
+    {
+      "alg": "Ed25519",
+      "x": "NZaxmJZy1D3YyMikLsTaZqY49rJACaW4NIHIPicjS1A"
+    }
+  ],
+  "signatures": [
+    {
+      "party": 0,
+      "alg": "Ed25519",
+      "sig": "41wWrU-TkPsMkx8ijgUQJXsQCXkcyxxfzNETnzHIvsCDxQfUImhFwrXN2OBUBc1kWYqXN_vTizDhq04Kr2wcDg"
+    },
+    {
+      "party": 1,
+      "alg": "Ed25519",
+      "sig": "ZJuOEcApxerg0MEWUU6KXzysVWL6pE9CdVWRJJUd_VEnIIIla6Pyyi3bgHlMYFDC16B28fTeOxwxejDrFgaxAA"
+    }
+  ]
+}

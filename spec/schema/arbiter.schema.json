@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aeilus.institute/schema/vledger/1/arbiter.schema.json",
+  "title": "aevri.vledger 1.0 arbiter messages: stamp request, stamp, case, ruling",
+  "$defs": {
+    "thumbprint": { "$ref": "common.schema.json#/$defs/sha256" },
+    "stampRequest": {
+      "type": "object", "required": ["receiptDigest", "keys", "signatures"],
+      "properties": {
+        "receiptDigest": { "$ref": "common.schema.json#/$defs/sha256" },
+        "keys": { "type": "array", "minItems": 2, "items": { "$ref": "common.schema.json#/$defs/publicKey" } },
+        "signatures": { "type": "array", "items": { "allOf": [ { "$ref": "common.schema.json#/$defs/signature" } ], "required": ["party"] } }
+      }
+    },
+    "stamp": {
+      "type": "object", "required": ["type", "receiptDigest", "parties", "receivedAt", "arbiter", "sig"],
+      "properties": {
+        "type": { "const": "aevri.vledger.stamp" },
+        "receiptDigest": { "$ref": "common.schema.json#/$defs/sha256" },
+        "parties": { "type": "array", "items": { "$ref": "#/$defs/thumbprint" } },
+        "receivedAt": { "$ref": "common.schema.json#/$defs/time" },
+        "arbiter": { "$ref": "common.schema.json#/$defs/arbiterRef" },
+        "sig": { "$ref": "common.schema.json#/$defs/b64u" }
+      }
+    },
+    "case": {
+      "type": "object", "required": ["caseId", "receipt", "signatures", "claimant", "statement"],
+      "properties": {
+        "caseId": { "$ref": "common.schema.json#/$defs/uuid" },
+        "receipt": { "$ref": "receipt.schema.json#/$defs/receipt" },
+        "signatures": { "type": "array" },
+        "claimant": { "type": "integer", "minimum": 0 },
+        "statement": { "$ref": "common.schema.json#/$defs/text" },
+        "request": { "enum": ["attest", "opinion", "decision"] }
+      }
+    },
+    "ruling": {
+      "type": "object", "required": ["type", "caseId", "receiptDigest", "mode", "binding", "decision", "issuedAt", "arbiter", "sig"],
+      "properties": {
+        "type": { "const": "aevri.vledger.ruling" },
+        "caseId": { "$ref": "common.schema.json#/$defs/uuid" },
+        "receiptDigest": { "$ref": "common.schema.json#/$defs/sha256" },
+        "mode": { "enum": ["attest", "opinion", "binding"] },
+        "binding": { "type": "boolean" },
+        "decision": { "$ref": "common.schema.json#/$defs/text" },
+        "status": { "enum": ["matched", "disputed", "withdrawn"] },
+        "reasons": { "$ref": "common.schema.json#/$defs/text" },
+        "issuedAt": { "$ref": "common.schema.json#/$defs/time" },
+        "arbiter": { "$ref": "common.schema.json#/$defs/arbiterRef" },
+        "sig": { "$ref": "common.schema.json#/$defs/b64u" }
+      },
+      "allOf": [
+        { "if": { "properties": { "binding": { "const": true } } }, "then": { "properties": { "mode": { "const": "binding" } }, "required": ["status"] } },
+        { "if": { "properties": { "mode": { "enum": ["attest", "opinion"] } } }, "then": { "properties": { "binding": { "const": false } } } }
+      ]
+    }
+  }
+}

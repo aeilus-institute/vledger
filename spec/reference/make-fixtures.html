@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VLedger L0 fixtures</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 16px; background: #f8faf9; color: #1d2b28; }
+  pre { white-space: pre-wrap; background: #fff; border: 1px solid #d5dfdc; padding: 12px; }
+  .ok { color: #1f6f5c; } .bad { color: #a33; }
+</style>
+</head>
+<body>
+<h1>aevri.vledger 1.0 - fixture generator (test data only)</h1>
+<p>Runs the reference code with Web Crypto and writes <code>fixtures/*.json</code> through tools/devserver.py.
+All passphrases and private keys below are public test values.</p>
+<button id="run">Generate fixtures</button>
+<pre id="log"></pre>
+<script type="module">
+import * as C from './vledger-crypto.js';
+import * as V from './vledger-value.js';
+
+const log = (s, cls) => { const el = document.getElementById('log'); const span = document.createElement('span'); if (cls) span.className = cls; span.textContent = s + '\n'; el.append(span); };
+const put = async (name, data) => {
+  const r = await fetch('../fixtures/' + name, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  if (r.status !== 204) throw new Error('PUT ' + name + ' -> ' + r.status);
+  log('wrote fixtures/' + name, 'ok');
+};
+const clone = (x) => JSON.parse(JSON.stringify(x));
+const T = (d) => d + 'T10:00:00Z';
+
+const PASS_A = 'vledger test passphrase A';
+const PASS_B = 'vledger test passphrase B';
+const ARBITER_URL = 'https://aeilus.institute/arbiter/';
+
+async function run() {
+  const manifest = { format: 'aevri.vledger', version: '1.0', generatedAt: C.nowIso(), note: 'Test data only. Passphrases and private keys here are public.', fixtures: [] };
+  const add = (file, schema, expect) => manifest.fixtures.push({ file, schema, expect });
+
+  // ---- provider recovery key (test) ----
+  const prov = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const provPub = await crypto.subtle.exportKey('jwk', prov.publicKey);
+  const provPriv = await crypto.subtle.exportKey('jwk', prov.privateKey);
+
+  // ---- wallet A: a person with goals, counterparties, exchanges ----
+  const { doc: A, session: sa } = await C.createWallet(PASS_A, { createdAt: '2026-10-17T09:00:00Z' });
+  await C.addProviderRecoverySlot(A, sa, { providerId: 'https://aeilus.institute/vledger/', keyId: 'aevri-recovery-test-1', providerPublicJwk: { kty: provPub.kty, crv: provPub.crv, x: provPub.x, y: provPub.y } });
+  const plain = [];
+  const rec = async (payload) => { const env = await C.addRecord(A, sa, payload); plain.push({ id: env.id, payload }); return env.id; };
+  const P = (kind, body, extra = {}) => ({ kind, createdAt: extra.createdAt || '2026-10-17T09:05:00Z', supersedes: extra.supersedes ?? null, source: extra.source || 'manual', body });
+
+  await rec(P('settings', { planCountDefault: 0, planCountBy: [], arbiters: [], providers: [{ kind: 'device', label: 'This browser' }] }));
+  const cpSelf = await rec(P('counterparty', { type: 'self', name: 'Me' }));
+  const cpAnna = await rec(P('counterparty', { type: 'person', name: 'Anna', note: 'Neighbour' }));
+  const cpInst = await rec(P('counterparty', { type: 'organization', name: 'Aeilus Value Research Institute', profileUrl: 'https://aeilus.institute/vledger/profile.json' }));
+  const cpMun = await rec(P('counterparty', { type: 'state', name: 'Local municipality' }));
+  const tThing = await rec(P('element-type', { name: 'Thing', category: 'thing' }));
+  const tInfo = await rec(P('element-type', { name: 'Research work', category: 'information' }));
+  const tSvc = await rec(P('element-type', { name: 'Public service', category: 'service' }));
+  const factFather = await rec(P('fact', { topic: 'family', text: 'I have not written to my father for two years and I want to change that.', certainty: 'medium', exploring: true, goalIds: [] }));
+  const gLetter = await rec(P('goal', { title: 'Write a letter to my father', why: 'Restore contact', S: 1000000, N: 200000, unit: 'points', status: 'active', factIds: [factFather] }));
+  const gGreek = await rec(P('goal', { title: 'Speak basic Greek', S: 1000000, N: 1000000, unit: 'points', status: 'active', factIds: [] }));
+  const goals = [
+    { id: gLetter, S: 1000000, N: 200000, status: 'active' },
+    { id: gGreek, S: 1000000, N: 1000000, status: 'active' },
+  ];
+
+  // Exchange 1: Anna gave me a pen (it let me write the letter).
+  const exPen = await rec(P('exchange', { counterpartyId: cpAnna, given: [], received: [{ label: 'Ballpoint pen', typeId: tThing, quantity: 1 }], occurredAt: '2026-10-16', status: 'recorded' }));
+  const contribPen = [{ goalId: gLetter, c: 60000 }];
+  const vPen = V.comparableValue(goals, contribPen);
+  const aPen = await rec(P('assessment', { exchangeId: exPen, elementRef: { exchangeId: exPen, side: 'received', index: 0 }, phase: 'received', gained: ['I finally started the letter'], lost: [], ownScore: { value: 1000000, unit: 'points' }, contributions: contribPen, v: vPen.v, confidence: 'medium', reasons: 'Without a pen at hand I kept postponing it.' }));
+
+  // Exchange 2: the institute's research work with planned value (pilot D-14).
+  const exWork = await rec(P('exchange', { counterpartyId: cpInst, given: [{ label: '20 minutes of reading', quantity: 20, unit: 'min' }], received: [{ label: 'How to Assess Value (research)', typeId: tInfo }], occurredAt: '2026-10-15', status: 'recorded' }));
+  const planWork = await rec(P('plan', { exchangeId: exWork, elementRef: { exchangeId: exWork, side: 'received', index: 0 }, authorCounterpartyId: cpInst, promise: 'A method you can apply to a real decision this week', goalCategory: 'decisions', plannedV: 0.05, profileRef: 'https://aeilus.institute/vledger/profile.json#value-assessment-methodology' }, { source: 'profile' }));
+  const contribWork = [{ goalId: gGreek, k: 0.01 }];
+  const vWork = V.comparableValue(goals, contribWork);
+  const aWork = await rec(P('assessment', { exchangeId: exWork, elementRef: { exchangeId: exWork, side: 'received', index: 0 }, phase: 'received', gained: ['A clear checklist'], lost: ['20 minutes'], contributions: contribWork, v: vWork.v, planCount: V.planFactor({ planCountDefault: 0 }, { counterpartyId: cpInst }), confidence: 'low' }));
+
+  // Exchange 3: municipality service with harm (anti-value).
+  const exSvc = await rec(P('exchange', { counterpartyId: cpMun, given: [{ label: 'Fee', typeId: tSvc, quantity: 20, unit: 'EUR' }], received: [{ label: 'Waste collection permit', typeId: tSvc }], occurredAt: '2026-10-10', status: 'recorded' }));
+  const contribSvc = [{ goalId: gGreek, c: -50000 }];
+  const vSvc = V.comparableValue(goals, contribSvc);
+  await rec(P('assessment', { exchangeId: exSvc, elementRef: { exchangeId: exSvc, side: 'received', index: 0 }, phase: 'received', gained: ['Permit received'], lost: ['Three visits', 'A lost evening of study'], contributions: contribSvc, v: vSvc.v, confidence: 'high' }));
+
+  // Correction and withdrawal, then an erased note.
+  await rec(P('fact', { topic: 'family', text: 'I wrote the first page of the letter.', certainty: 'high', exploring: false, goalIds: [gLetter] }, { supersedes: factFather, createdAt: '2026-10-17T09:30:00Z' }));
+  const note = await rec(P('note', { text: 'Draft thoughts I do not want to keep.' }));
+  await rec(P('note', { withdrawn: true }, { supersedes: note }));
+  const erasedId = await rec(P('note', { text: 'This record will be erased.' }));
+  C.erase(A, erasedId, '2026-10-17T11:00:00Z');
+  plain.find((p) => p.id === erasedId).payload = null;
+
+  const chainA = await C.verifyChain(A);
+  log('wallet A chain problems: ' + chainA.length, chainA.length ? 'bad' : 'ok');
+  // Self-checks: unlock with passphrase and with the provider key, read every record back.
+  const s1 = await C.unlockWithPassphrase(A, PASS_A);
+  const s2 = await C.recoverWithProviderKey(A, 'r1', provPriv);
+  for (const p of plain) {
+    const env = A.records.find((r) => r.id === p.id);
+    const back = await C.readRecord(A, s1, env);
+    const back2 = await C.readRecord(A, s2, env);
+    if (C.canon(back) !== C.canon(p.payload) || C.canon(back2) !== C.canon(p.payload)) throw new Error('round trip failed for ' + p.id);
+  }
+  let wrongOk = false; try { await C.unlockWithPassphrase(A, 'wrong'); wrongOk = true; } catch {}
+  if (wrongOk) throw new Error('wrong passphrase opened the wallet');
+  log('wallet A: passphrase and provider recovery both open it; wrong passphrase does not', 'ok');
+
+  await put('wallet-a.vledger.json', A);
+  await put('wallet-a.plain.json', { note: 'Test data only.', passphrase: PASS_A, providerRecovery: { slotId: 'r1', privateJwk: provPriv }, records: plain,
+    values: [ { assessmentOf: exPen, contributions: contribPen, v: vPen.v }, { assessmentOf: exWork, contributions: contribWork, v: vWork.v }, { assessmentOf: exSvc, contributions: contribSvc, v: vSvc.v } ],
+    goals });
+  add('wallet-a.vledger.json', 'wallet.schema.json', { chainProblems: 0, opensWith: 'wallet-a.plain.json', erased: [erasedId] });
+
+  // Tampered copy: one ciphertext byte changed.
+  const bad = clone(A);
+  const victim = bad.records[3];
+  const ct = C.unb64u(victim.ct); ct[0] ^= 1; victim.ct = C.b64u(ct);
+  await put('invalid-wallet-tampered.vledger.json', bad);
+  add('invalid-wallet-tampered.vledger.json', 'wallet.schema.json', { chainProblems: 1, problemRecord: victim.id });
+
+  // ---- wallet B and receipts ----
+  const { doc: B, session: sb } = await C.createWallet(PASS_B, { createdAt: '2026-10-17T09:00:00Z' });
+  const arbKeys = await C.newIdentity();
+  const arbiter = { ref: { url: ARBITER_URL, key: arbKeys.publicKey, name: 'ÆVRI arbiter (test key)' }, signer: arbKeys.privateKey };
+
+  const penEl = { salt: C.b64u(C.rand(16)), label: 'Ballpoint pen', quantity: 1, unit: null, note: null };
+  const baseReceipt = {
+    type: 'aevri.vledger.receipt', version: 1, receiptId: C.uuid7(), occurredAt: T('2026-10-16'),
+    parties: [ { role: 'giver', key: sb.publicKey, label: 'Anna' }, { role: 'receiver', key: sa.publicKey } ],
+    elements: [ { from: 0, to: 1, digest: await C.elementDigest(penEl), type: 'thing' } ],
+    arbiters: [ { party: 0, ...arbiter.ref }, { party: 1, ...arbiter.ref } ],
+    mandate: { mode: 'attest' },
+  };
+  const matched = { receipt: clone(baseReceipt), signatures: [] };
+  await C.signReceipt(matched, 0, sb); await C.signReceipt(matched, 1, sa);
+  const st = await C.receiptStatus(matched);
+  log('receipt matched: ' + st.matched, st.matched ? 'ok' : 'bad');
+  await put('receipt-matched.json', matched);
+  add('receipt-matched.json', 'receipt.schema.json', { matched: true, binding: false, receiptDigest: await C.receiptDigest(matched.receipt), elementOpening: penEl });
+
+  const half = { receipt: clone(baseReceipt), signatures: [] };
+  await C.signReceipt(half, 1, sa);
+  await put('receipt-one-signature.json', half);
+  add('receipt-one-signature.json', 'receipt.schema.json', { matched: false, validSignatures: [1] });
+
+  const tampered = clone(matched); tampered.receipt.occurredAt = T('2026-10-15');
+  await put('invalid-receipt-tampered.json', tampered);
+  add('invalid-receipt-tampered.json', 'receipt.schema.json', { matched: false, validSignatures: [] });
+
+  const bindingR = { receipt: { ...clone(baseReceipt), receiptId: C.uuid7(), mandate: { mode: 'binding', arbiter: arbiter.ref, scope: 'Whether the pen was a gift or a loan', rulesUrl: 'https://aeilus.institute/arbiter/rules/' } }, signatures: [] };
+  await C.signReceipt(bindingR, 0, sb); await C.signReceipt(bindingR, 1, sa);
+  await put('receipt-binding.json', bindingR);
+  add('receipt-binding.json', 'receipt.schema.json', { matched: true, binding: true, receiptDigest: await C.receiptDigest(bindingR.receipt) });
+
+  // ---- arbiter ----
+  const stampReq = { receiptDigest: await C.receiptDigest(matched.receipt), keys: matched.receipt.parties.map((p) => p.key), signatures: matched.signatures };
+  await put('arbiter-stamp-request.json', stampReq);
+  add('arbiter-stamp-request.json', 'arbiter.schema.json#/$defs/stampRequest', { signaturesValid: true });
+  const stamp = await C.makeStamp(arbiter, stampReq, '2026-10-16T12:00:00Z');
+  await put('arbiter-stamp.json', stamp);
+  add('arbiter-stamp.json', 'arbiter.schema.json#/$defs/stamp', { signedBy: 'arbiter', valid: true });
+
+  const caseId = C.uuid7();
+  const rulingBinding = await C.makeRuling(arbiter, { caseId, receiptDigest: await C.receiptDigest(bindingR.receipt), mode: 'binding', binding: true, decision: 'The pen was a gift.', status: 'matched', reasons: 'Both parties agreed in the hearing that no return was discussed.', issuedAt: '2026-10-20T10:00:00Z' });
+  await put('arbiter-ruling-binding.json', rulingBinding);
+  add('arbiter-ruling-binding.json', 'arbiter.schema.json#/$defs/ruling', { signedBy: 'arbiter', valid: true, mandateMatches: 'receipt-binding.json' });
+  const rulingOpinion = await C.makeRuling(arbiter, { caseId: C.uuid7(), receiptDigest: await C.receiptDigest(matched.receipt), mode: 'opinion', binding: false, decision: 'In my opinion the exchange was a gift.', issuedAt: '2026-10-20T10:00:00Z' });
+  await put('arbiter-ruling-opinion.json', rulingOpinion);
+  add('arbiter-ruling-opinion.json', 'arbiter.schema.json#/$defs/ruling', { signedBy: 'arbiter', valid: true, mandateMatches: null });
+  const badRuling = { ...clone(rulingOpinion), binding: true };
+  await put('invalid-ruling-binding-without-mandate.json', badRuling);
+  add('invalid-ruling-binding-without-mandate.json', 'arbiter.schema.json#/$defs/ruling', { schemaValid: false });
+
+  // ---- organisation profile and feedback (pilot D-14) ----
+  const inst = await C.newIdentity();
+  const profile = { type: 'aevri.vledger.profile', version: 1, profileId: 'https://aeilus.institute/vledger/profile.json', kind: 'organization', name: 'Aeilus Value Research Institute', key: inst.publicKey, updatedAt: '2026-10-17T09:00:00Z',
+    feedback: { endpoint: 'https://aeilus.institute/vledger/feedback/', anonymousAccepted: true, minAggregate: 5 },
+    arbiter: arbiter.ref,
+    elements: [ { elementId: 'value-assessment-methodology', label: 'How to Assess Value', category: 'information', promise: 'A method you can apply to a real decision this week', goalCategory: 'decisions', plannedV: 0.05 } ] };
+  const profileDoc = { profile, sig: await C.sign(inst.privateKey, C.te.encode(C.canon(profile))) };
+  await put('profile-aevri.json', profileDoc);
+  add('profile-aevri.json', 'profile.schema.json', { signedBy: 'profile.key', valid: true });
+
+  const fbAnon = { type: 'aevri.vledger.feedback', version: 1, feedbackId: C.uuid7(), profileId: profile.profileId, elementId: 'value-assessment-methodology', phase: 'received', gained: ['A clear checklist'], lost: ['20 minutes'], gap: 'below-plan', v: vWork.v, anonymous: true, sentAt: '2026-10-17' };
+  await put('feedback-anonymous.json', fbAnon);
+  add('feedback-anonymous.json', 'feedback.schema.json', { schemaValid: true });
+  const fbNamed = { ...clone(fbAnon), feedbackId: C.uuid7(), anonymous: false, from: sa.publicKey };
+  fbNamed.sig = await C.sign(sa.signer, C.te.encode(C.canon(fbNamed)));
+  await put('feedback-named.json', fbNamed);
+  add('feedback-named.json', 'feedback.schema.json', { schemaValid: true, signedBy: 'from', valid: true });
+  await put('invalid-feedback-anonymous-with-key.json', { ...clone(fbAnon), from: sa.publicKey });
+  add('invalid-feedback-anonymous-with-key.json', 'feedback.schema.json', { schemaValid: false });
+
+  // ---- value model cases ----
+  const cases = [
+    { name: 'pen for the letter', goals, contributions: contribPen },
+    { name: 'research as a share', goals, contributions: contribWork },
+    { name: 'harm to a goal', goals, contributions: contribSvc },
+    { name: 'two goals at once', goals, contributions: [{ goalId: gLetter, c: 20000 }, { goalId: gGreek, c: 100000 }] },
+    { name: 'dropped goal counts 0', goals: [goals[0], { ...goals[1], status: 'dropped' }], contributions: [{ goalId: gGreek, c: 500000 }] },
+  ].map((c) => ({ ...c, expect: V.comparableValue(c.goals, c.contributions) }));
+  const checkGoals = [ { id: 'g-a', S: 10, N: 10, status: 'active' }, { id: 'g-b', S: 1, N: 1, status: 'active' } ];
+  const checkAssessments = [
+    { at: '2026-10-01T00:00:00Z', v: 0.5, ownScore: { value: 1 }, contributions: [{ goalId: 'g-b', k: 0.6 }] },
+    { at: '2026-10-02T00:00:00Z', v: 0.4, ownScore: { value: 2 }, contributions: [{ goalId: 'g-b', k: 0.6 }] },
+    { at: '2026-10-03T00:00:00Z', v: 0.3, ownScore: { value: 3 }, contributions: [{ goalId: 'g-b', k: 0.1 }] },
+    { at: '2026-10-04T00:00:00Z', v: 0.2, ownScore: { value: 4 }, contributions: [] },
+    { at: '2026-10-05T00:00:00Z', v: 0.1, ownScore: { value: 5 }, contributions: [] },
+  ];
+  const checks = V.feelingChecks(checkGoals, checkAssessments, new Date('2026-10-17T00:00:00Z'));
+  await put('value-cases.json', { cases, feelingChecks: { goals: checkGoals, assessments: checkAssessments, now: '2026-10-17T00:00:00Z', expect: checks.map((c) => c.code) },
+    planFactor: [
+      { settings: { planCountDefault: 0 }, query: {}, expect: 0 },
+      { settings: { planCountDefault: 0, planCountBy: [{ counterpartyId: cpInst, factor: 0.5 }] }, query: { counterpartyId: cpInst }, expect: 0.5 },
+      { settings: { planCountDefault: 0.2, planCountBy: [{ counterpartyId: cpInst, factor: 0.5 }] }, query: { counterpartyId: cpMun }, expect: 0.2 },
+    ] });
+  add('value-cases.json', null, { recompute: true });
+
+  await put('manifest.json', manifest);
+  log('done: ' + manifest.fixtures.length + ' fixtures', 'ok');
+  window.__done = true;
+}
+
+document.getElementById('run').addEventListener('click', () => run().catch((e) => { log('ERROR ' + e.message, 'bad'); window.__error = e.message; }));
+</script>
+</body>
+</html>

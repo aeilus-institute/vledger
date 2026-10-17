@@ -1,0 +1,295 @@
+{
+  "cases": [
+    {
+      "name": "pen for the letter",
+      "goals": [
+        {
+          "id": "01a146c3-bbe1-7b29-8ef9-87cfe7f702bc",
+          "S": 1000000,
+          "N": 200000,
+          "status": "active"
+        },
+        {
+          "id": "01a146c3-bbe1-792d-85f7-19c9213761bb",
+          "S": 1000000,
+          "N": 1000000,
+          "status": "active"
+        }
+      ],
+      "contributions": [
+        {
+          "goalId": "01a146c3-bbe1-7b29-8ef9-87cfe7f702bc",
+          "c": 60000
+        }
+      ],
+      "expect": {
+        "v": 0.15,
+        "parts": [
+          {
+            "goalId": "01a146c3-bbe1-7b29-8ef9-87cfe7f702bc",
+            "k": 0.3,
+            "w": 0.5,
+            "wk": 0.15
+          }
+        ]
+      }
+    },
+    {
+      "name": "research as a share",
+      "goals": [
+        {
+          "id": "01a146c3-bbe1-7b29-8ef9-87cfe7f702bc",
+          "S": 1000000,
+          "N": 200000,
+          "status": "active"
+        },
+        {
+          "id": "01a146c3-bbe1-792d-85f7-19c9213761bb",
+          "S": 1000000,
+          "N": 1000000,
+          "status": "active"
+        }
+      ],
+      "contributions": [
+        {
+          "goalId": "01a146c3-bbe1-792d-85f7-19c9213761bb",
+          "k": 0.01
+        }
+      ],
+      "expect": {
+        "v": 0.005,
+        "parts": [
+          {
+            "goalId": "01a146c3-bbe1-792d-85f7-19c9213761bb",
+            "k": 0.01,
+            "w": 0.5,
+            "wk": 0.005
+          }
+        ]
+      }
+    },
+    {
+      "name": "harm to a goal",
+      "goals": [
+        {
+          "id": "01a146c3-bbe1-7b29-8ef9-87cfe7f702bc",
+          "S": 1000000,
+          "N": 200000,
+          "status": "active"
+        },
+        {
+          "id": "01a146c3-bbe1-792d-85f7-19c9213761bb",
+          "S": 1000000,
+          "N": 1000000,
+          "status": "active"
+        }
+      ],
+      "contributions": [
+        {
+          "goalId": "01a146c3-bbe1-792d-85f7-19c9213761bb",
+          "c": -50000
+        }
+      ],
+      "expect": {
+        "v": -0.025,
+        "parts": [
+          {
+            "goalId": "01a146c3-bbe1-792d-85f7-19c9213761bb",
+            "k": -0.05,
+            "w": 0.5,
+            "wk": -0.025
+          }
+        ]
+      }
+    },
+    {
+      "name": "two goals at once",
+      "goals": [
+        {
+          "id": "01a146c3-bbe1-7b29-8ef9-87cfe7f702bc",
+          "S": 1000000,
+          "N": 200000,
+          "status": "active"
+        },
+        {
+          "id": "01a146c3-bbe1-792d-85f7-19c9213761bb",
+          "S": 1000000,
+          "N": 1000000,
+          "status": "active"
+        }
+      ],
+      "contributions": [
+        {
+          "goalId": "01a146c3-bbe1-7b29-8ef9-87cfe7f702bc",
+          "c": 20000
+        },
+        {
+          "goalId": "01a146c3-bbe1-792d-85f7-19c9213761bb",
+          "c": 100000
+        }
+      ],
+      "expect": {
+        "v": 0.1,
+        "parts": [
+          {
+            "goalId": "01a146c3-bbe1-7b29-8ef9-87cfe7f702bc",
+            "k": 0.1,
+            "w": 0.5,
+            "wk": 0.05
+          },
+          {
+            "goalId": "01a146c3-bbe1-792d-85f7-19c9213761bb",
+            "k": 0.1,
+            "w": 0.5,
+            "wk": 0.05
+          }
+        ]
+      }
+    },
+    {
+      "name": "dropped goal counts 0",
+      "goals": [
+        {
+          "id": "01a146c3-bbe1-7b29-8ef9-87cfe7f702bc",
+          "S": 1000000,
+          "N": 200000,
+          "status": "active"
+        },
+        {
+          "id": "01a146c3-bbe1-792d-85f7-19c9213761bb",
+          "S": 1000000,
+          "N": 1000000,
+          "status": "dropped"
+        }
+      ],
+      "contributions": [
+        {
+          "goalId": "01a146c3-bbe1-792d-85f7-19c9213761bb",
+          "c": 500000
+        }
+      ],
+      "expect": {
+        "v": 0,
+        "parts": []
+      }
+    }
+  ],
+  "feelingChecks": {
+    "goals": [
+      {
+        "id": "g-a",
+        "S": 10,
+        "N": 10,
+        "status": "active"
+      },
+      {
+        "id": "g-b",
+        "S": 1,
+        "N": 1,
+        "status": "active"
+      }
+    ],
+    "assessments": [
+      {
+        "at": "2026-10-01T00:00:00Z",
+        "v": 0.5,
+        "ownScore": {
+          "value": 1
+        },
+        "contributions": [
+          {
+            "goalId": "g-b",
+            "k": 0.6
+          }
+        ]
+      },
+      {
+        "at": "2026-10-02T00:00:00Z",
+        "v": 0.4,
+        "ownScore": {
+          "value": 2
+        },
+        "contributions": [
+          {
+            "goalId": "g-b",
+            "k": 0.6
+          }
+        ]
+      },
+      {
+        "at": "2026-10-03T00:00:00Z",
+        "v": 0.3,
+        "ownScore": {
+          "value": 3
+        },
+        "contributions": [
+          {
+            "goalId": "g-b",
+            "k": 0.1
+          }
+        ]
+      },
+      {
+        "at": "2026-10-04T00:00:00Z",
+        "v": 0.2,
+        "ownScore": {
+          "value": 4
+        },
+        "contributions": []
+      },
+      {
+        "at": "2026-10-05T00:00:00Z",
+        "v": 0.1,
+        "ownScore": {
+          "value": 5
+        },
+        "contributions": []
+      }
+    ],
+    "now": "2026-10-17T00:00:00Z",
+    "expect": [
+      "goal-overfilled",
+      "scale-disagrees",
+      "top-goal-untouched"
+    ]
+  },
+  "planFactor": [
+    {
+      "settings": {
+        "planCountDefault": 0
+      },
+      "query": {},
+      "expect": 0
+    },
+    {
+      "settings": {
+        "planCountDefault": 0,
+        "planCountBy": [
+          {
+            "counterpartyId": "01a146c3-bbe1-7ab4-b6d5-d0ef55888881",
+            "factor": 0.5
+          }
+        ]
+      },
+      "query": {
+        "counterpartyId": "01a146c3-bbe1-7ab4-b6d5-d0ef55888881"
+      },
+      "expect": 0.5
+    },
+    {
+      "settings": {
+        "planCountDefault": 0.2,
+        "planCountBy": [
+          {
+            "counterpartyId": "01a146c3-bbe1-7ab4-b6d5-d0ef55888881",
+            "factor": 0.5
+          }
+        ]
+      },
+      "query": {
+        "counterpartyId": "01a146c3-bbe1-715f-b5f7-38eede807aab"
+      },
+      "expect": 0.2
+    }
+  ]
+}

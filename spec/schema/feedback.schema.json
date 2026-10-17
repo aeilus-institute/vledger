@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aeilus.institute/schema/vledger/1/feedback.schema.json",
+  "title": "aevri.vledger 1.0 feedback from a holder to an organisation or a state body",
+  "type": "object",
+  "required": ["type", "version", "feedbackId", "profileId", "elementId", "phase", "anonymous", "sentAt"],
+  "properties": {
+    "type": { "const": "aevri.vledger.feedback" },
+    "version": { "const": 1 },
+    "feedbackId": { "$ref": "common.schema.json#/$defs/uuid" },
+    "profileId": { "type": "string", "pattern": "^https://" },
+    "elementId": { "type": "string", "maxLength": 100 },
+    "receiptDigest": { "$ref": "common.schema.json#/$defs/sha256" },
+    "phase": { "enum": ["expected", "received", "retro"] },
+    "gained": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/line" } },
+    "lost": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/line" } },
+    "gap": { "enum": ["above-plan", "as-planned", "below-plan", "harm", "unknown"] },
+    "v": { "type": "number", "minimum": -1, "maximum": 1 },
+    "anonymous": { "type": "boolean" },
+    "from": { "$ref": "common.schema.json#/$defs/publicKey" },
+    "sig": { "$ref": "common.schema.json#/$defs/b64u" },
+    "sentAt": { "$ref": "common.schema.json#/$defs/date" }
+  },
+  "if": { "properties": { "anonymous": { "const": true } } },
+  "then": { "not": { "anyOf": [ { "required": ["from"] }, { "required": ["sig"] } ] } },
+  "else": { "required": ["from", "sig"] }
+}

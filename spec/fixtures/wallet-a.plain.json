@@ -1,0 +1,478 @@
+{
+  "note": "Test data only.",
+  "passphrase": "vledger test passphrase A",
+  "providerRecovery": {
+    "slotId": "r1",
+    "privateJwk": {
+      "crv": "P-256",
+      "d": "zAnL36MeFsBkcWtFSJaMJb5oKwa6pO9SFacpDWCxqKg",
+      "ext": true,
+      "key_ops": [
+        "deriveBits"
+      ],
+      "kty": "EC",
+      "x": "QIxyOrJH-0MpMJ4GcMVEZbQqzNF7K4r8d_xVWINquL4",
+      "y": "O6pxGh24jGqYPE_qxV3yAaVZ4ow0TUN7m3mgcwDgd8U"
+    }
+  },
+  "records": [
+    {
+      "id": "01a146c3-bbe0-7dd7-8884-58d8209daf72",
+      "payload": {
+        "kind": "settings",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "planCountDefault": 0,
+          "planCountBy": [],
+          "arbiters": [],
+          "providers": [
+            {
+              "kind": "device",
+              "label": "This browser"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "01a146c3-bbe0-7baa-9370-01fd7806c57d",
+      "payload": {
+        "kind": "counterparty",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "type": "self",
+          "name": "Me"
+        }
+      }
+    },
+    {
+      "id": "01a146c3-bbe0-75b2-841e-8544971e9395",
+      "payload": {
+        "kind": "counterparty",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "type": "person",
+          "name": "Anna",
+          "note": "Neighbour"
+        }
+      }
+    },
+    {
+      "id": "01a146c3-bbe1-7ab4-b6d5-d0ef55888881",
+      "payload": {
+        "kind": "counterparty",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "type": "organization",
+          "name": "Aeilus Value Research Institute",
+          "profileUrl": "https://aeilus.institute/vledger/profile.json"
+        }
+      }
+    },
+    {
+      "id": "01a146c3-bbe1-715f-b5f7-38eede807aab",
+      "payload": {
+        "kind": "counterparty",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "type": "state",
+          "name": "Local municipality"
+        }
+      }
+    },
+    {
+      "id": "01a146c3-bbe1-7746-a91c-b777a0d5991f",
+      "payload": {
+        "kind": "element-type",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "name": "Thing",
+          "category": "thing"
+        }
+      }
+    },
+    {
+      "id": "01a146c3-bbe1-7734-a9cc-f31cd74f07c9",
+      "payload": {
+        "kind": "element-type",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "name": "Research work",
+          "category": "information"
+        }
+      }
+    },
+    {
+      "id": "01a146c3-bbe1-7ba2-be9d-939301f98a9a",
+      "payload": {
+        "kind": "element-type",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "name": "Public service",
+          "category": "service"
+        }
+      }
+    },
+    {
+      "id": "01a146c3-bbe1-7d12-bdd3-b74488d6eee9",
+      "payload": {
+        "kind": "fact",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "topic": "family",
+          "text": "I have not written to my father for two years and I want to change that.",
+          "certainty": "medium",
+          "exploring": true,
+          "goalIds": []
+        }
+      }
+    },
+    {
+      "id": "01a146c3-bbe1-7b29-8ef9-87cfe7f702bc",
+      "payload": {
+        "kind": "goal",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "title": "Write a letter to my father",
+          "why": "Restore contact",
+          "S": 1000000,
+          "N": 200000,
+          "unit": "points",
+          "status": "active",
+          "factIds": [
+            "01a146c3-bbe1-7d12-bdd3-b74488d6eee9"
+          ]
+        }
+      }
+    },
+    {
+      "id": "01a146c3-bbe1-792d-85f7-19c9213761bb",
+      "payload": {
+        "kind": "goal",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "title": "Speak basic Greek",
+          "S": 1000000,
+          "N": 1000000,
+          "unit": "points",
+          "status": "active",
+          "factIds": []
+        }
+      }
+    },
+    {
+      "id": "01a146c3-bbe1-79be-9379-5f0c81260558",
+      "payload": {
+        "kind": "exchange",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "counterpartyId": "01a146c3-bbe0-75b2-841e-8544971e9395",
+          "given": [],
+          "received": [
+            {
+              "label": "Ballpoint pen",
+              "typeId": "01a146c3-bbe1-7746-a91c-b777a0d5991f",
+              "quantity": 1
+            }
+          ],
+          "occurredAt": "2026-10-16",
+          "status": "recorded"
+        }
+      }
+    },
+    {
+      "id": "01a146c3-bbe2-769f-953b-64175bbdc2ae",
+      "payload": {
+        "kind": "assessment",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "exchangeId": "01a146c3-bbe1-79be-9379-5f0c81260558",
+          "elementRef": {
+            "exchangeId": "01a146c3-bbe1-79be-9379-5f0c81260558",
+            "side": "received",
+            "index": 0
+          },
+          "phase": "received",
+          "gained": [
+            "I finally started the letter"
+          ],
+          "lost": [],
+          "ownScore": {
+            "value": 1000000,
+            "unit": "points"
+          },
+          "contributions": [
+            {
+              "goalId": "01a146c3-bbe1-7b29-8ef9-87cfe7f702bc",
+              "c": 60000
+            }
+          ],
+          "v": 0.15,
+          "confidence": "medium",
+          "reasons": "Without a pen at hand I kept postponing it."
+        }
+      }
+    },
+    {
+      "id": "01a146c3-bbe2-7721-bf21-91214befdbae",
+      "payload": {
+        "kind": "exchange",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "counterpartyId": "01a146c3-bbe1-7ab4-b6d5-d0ef55888881",
+          "given": [
+            {
+              "label": "20 minutes of reading",
+              "quantity": 20,
+              "unit": "min"
+            }
+          ],
+          "received": [
+            {
+              "label": "How to Assess Value (research)",
+              "typeId": "01a146c3-bbe1-7734-a9cc-f31cd74f07c9"
+            }
+          ],
+          "occurredAt": "2026-10-15",
+          "status": "recorded"
+        }
+      }
+    },
+    {
+      "id": "01a146c3-bbe2-76e7-874a-d2a241969cb5",
+      "payload": {
+        "kind": "plan",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "profile",
+        "body": {
+          "exchangeId": "01a146c3-bbe2-7721-bf21-91214befdbae",
+          "elementRef": {
+            "exchangeId": "01a146c3-bbe2-7721-bf21-91214befdbae",
+            "side": "received",
+            "index": 0
+          },
+          "authorCounterpartyId": "01a146c3-bbe1-7ab4-b6d5-d0ef55888881",
+          "promise": "A method you can apply to a real decision this week",
+          "goalCategory": "decisions",
+          "plannedV": 0.05,
+          "profileRef": "https://aeilus.institute/vledger/profile.json#value-assessment-methodology"
+        }
+      }
+    },
+    {
+      "id": "01a146c3-bbe2-7b9c-a0e8-1767b39ab758",
+      "payload": {
+        "kind": "assessment",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "exchangeId": "01a146c3-bbe2-7721-bf21-91214befdbae",
+          "elementRef": {
+            "exchangeId": "01a146c3-bbe2-7721-bf21-91214befdbae",
+            "side": "received",
+            "index": 0
+          },
+          "phase": "received",
+          "gained": [
+            "A clear checklist"
+          ],
+          "lost": [
+            "20 minutes"
+          ],
+          "contributions": [
+            {
+              "goalId": "01a146c3-bbe1-792d-85f7-19c9213761bb",
+              "k": 0.01
+            }
+          ],
+          "v": 0.005,
+          "planCount": 0,
+          "confidence": "low"
+        }
+      }
+    },
+    {
+      "id": "01a146c3-bbe2-7391-96b0-2b2f419d7166",
+      "payload": {
+        "kind": "exchange",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "counterpartyId": "01a146c3-bbe1-715f-b5f7-38eede807aab",
+          "given": [
+            {
+              "label": "Fee",
+              "typeId": "01a146c3-bbe1-7ba2-be9d-939301f98a9a",
+              "quantity": 20,
+              "unit": "EUR"
+            }
+          ],
+          "received": [
+            {
+              "label": "Waste collection permit",
+              "typeId": "01a146c3-bbe1-7ba2-be9d-939301f98a9a"
+            }
+          ],
+          "occurredAt": "2026-10-10",
+          "status": "recorded"
+        }
+      }
+    },
+    {
+      "id": "01a146c3-bbe2-7c7c-acda-2841d63be782",
+      "payload": {
+        "kind": "assessment",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "exchangeId": "01a146c3-bbe2-7391-96b0-2b2f419d7166",
+          "elementRef": {
+            "exchangeId": "01a146c3-bbe2-7391-96b0-2b2f419d7166",
+            "side": "received",
+            "index": 0
+          },
+          "phase": "received",
+          "gained": [
+            "Permit received"
+          ],
+          "lost": [
+            "Three visits",
+            "A lost evening of study"
+          ],
+          "contributions": [
+            {
+              "goalId": "01a146c3-bbe1-792d-85f7-19c9213761bb",
+              "c": -50000
+            }
+          ],
+          "v": -0.025,
+          "confidence": "high"
+        }
+      }
+    },
+    {
+      "id": "01a146c3-bbe2-70a3-90cf-783e68ae24aa",
+      "payload": {
+        "kind": "fact",
+        "createdAt": "2026-10-17T09:30:00Z",
+        "supersedes": "01a146c3-bbe1-7d12-bdd3-b74488d6eee9",
+        "source": "manual",
+        "body": {
+          "topic": "family",
+          "text": "I wrote the first page of the letter.",
+          "certainty": "high",
+          "exploring": false,
+          "goalIds": [
+            "01a146c3-bbe1-7b29-8ef9-87cfe7f702bc"
+          ]
+        }
+      }
+    },
+    {
+      "id": "01a146c3-bbe2-740f-8dda-d5731a356948",
+      "payload": {
+        "kind": "note",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": null,
+        "source": "manual",
+        "body": {
+          "text": "Draft thoughts I do not want to keep."
+        }
+      }
+    },
+    {
+      "id": "01a146c3-bbe2-7e5a-b0cd-c7e92e9fc50f",
+      "payload": {
+        "kind": "note",
+        "createdAt": "2026-10-17T09:05:00Z",
+        "supersedes": "01a146c3-bbe2-740f-8dda-d5731a356948",
+        "source": "manual",
+        "body": {
+          "withdrawn": true
+        }
+      }
+    },
+    {
+      "id": "01a146c3-bbe2-7dc0-8db0-5fbb97c358fc",
+      "payload": null
+    }
+  ],
+  "values": [
+    {
+      "assessmentOf": "01a146c3-bbe1-79be-9379-5f0c81260558",
+      "contributions": [
+        {
+          "goalId": "01a146c3-bbe1-7b29-8ef9-87cfe7f702bc",
+          "c": 60000
+        }
+      ],
+      "v": 0.15
+    },
+    {
+      "assessmentOf": "01a146c3-bbe2-7721-bf21-91214befdbae",
+      "contributions": [
+        {
+          "goalId": "01a146c3-bbe1-792d-85f7-19c9213761bb",
+          "k": 0.01
+        }
+      ],
+      "v": 0.005
+    },
+    {
+      "assessmentOf": "01a146c3-bbe2-7391-96b0-2b2f419d7166",
+      "contributions": [
+        {
+          "goalId": "01a146c3-bbe1-792d-85f7-19c9213761bb",
+          "c": -50000
+        }
+      ],
+      "v": -0.025
+    }
+  ],
+  "goals": [
+    {
+      "id": "01a146c3-bbe1-7b29-8ef9-87cfe7f702bc",
+      "S": 1000000,
+      "N": 200000,
+      "status": "active"
+    },
+    {
+      "id": "01a146c3-bbe1-792d-85f7-19c9213761bb",
+      "S": 1000000,
+      "N": 1000000,
+      "status": "active"
+    }
+  ]
+}

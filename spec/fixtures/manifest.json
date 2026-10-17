@@ -1,0 +1,148 @@
+{
+  "format": "aevri.vledger",
+  "version": "1.0",
+  "generatedAt": "2026-10-16T22:09:55Z",
+  "note": "Test data only. Passphrases and private keys here are public.",
+  "fixtures": [
+    {
+      "file": "wallet-a.vledger.json",
+      "schema": "wallet.schema.json",
+      "expect": {
+        "chainProblems": 0,
+        "opensWith": "wallet-a.plain.json",
+        "erased": [
+          "01a146c3-bbe2-7dc0-8db0-5fbb97c358fc"
+        ]
+      }
+    },
+    {
+      "file": "invalid-wallet-tampered.vledger.json",
+      "schema": "wallet.schema.json",
+      "expect": {
+        "chainProblems": 1,
+        "problemRecord": "01a146c3-bbe1-7ab4-b6d5-d0ef55888881"
+      }
+    },
+    {
+      "file": "receipt-matched.json",
+      "schema": "receipt.schema.json",
+      "expect": {
+        "matched": true,
+        "binding": false,
+        "receiptDigest": "sha256:05d594483283fd99889fe8821ddbe50fe85c6b8e1552c2fbfc07064d975e9d6f",
+        "elementOpening": {
+          "salt": "tXwbCADCtA0QDC9Xc-Wpyw",
+          "label": "Ballpoint pen",
+          "quantity": 1,
+          "unit": null,
+          "note": null
+        }
+      }
+    },
+    {
+      "file": "receipt-one-signature.json",
+      "schema": "receipt.schema.json",
+      "expect": {
+        "matched": false,
+        "validSignatures": [
+          1
+        ]
+      }
+    },
+    {
+      "file": "invalid-receipt-tampered.json",
+      "schema": "receipt.schema.json",
+      "expect": {
+        "matched": false,
+        "validSignatures": []
+      }
+    },
+    {
+      "file": "receipt-binding.json",
+      "schema": "receipt.schema.json",
+      "expect": {
+        "matched": true,
+        "binding": true,
+        "receiptDigest": "sha256:c2c728edab019f748de8fef43772235bbfc41e2b5b3ce4c1e8c690da3fdf2a01"
+      }
+    },
+    {
+      "file": "arbiter-stamp-request.json",
+      "schema": "arbiter.schema.json#/$defs/stampRequest",
+      "expect": {
+        "signaturesValid": true
+      }
+    },
+    {
+      "file": "arbiter-stamp.json",
+      "schema": "arbiter.schema.json#/$defs/stamp",
+      "expect": {
+        "signedBy": "arbiter",
+        "valid": true
+      }
+    },
+    {
+      "file": "arbiter-ruling-binding.json",
+      "schema": "arbiter.schema.json#/$defs/ruling",
+      "expect": {
+        "signedBy": "arbiter",
+        "valid": true,
+        "mandateMatches": "receipt-binding.json"
+      }
+    },
+    {
+      "file": "arbiter-ruling-opinion.json",
+      "schema": "arbiter.schema.json#/$defs/ruling",
+      "expect": {
+        "signedBy": "arbiter",
+        "valid": true,
+        "mandateMatches": null
+      }
+    },
+    {
+      "file": "invalid-ruling-binding-without-mandate.json",
+      "schema": "arbiter.schema.json#/$defs/ruling",
+      "expect": {
+        "schemaValid": false
+      }
+    },
+    {
+      "file": "profile-aevri.json",
+      "schema": "profile.schema.json",
+      "expect": {
+        "signedBy": "profile.key",
+        "valid": true
+      }
+    },
+    {
+      "file": "feedback-anonymous.json",
+      "schema": "feedback.schema.json",
+      "expect": {
+        "schemaValid": true
+      }
+    },
+    {
+      "file": "feedback-named.json",
+      "schema": "feedback.schema.json",
+      "expect": {
+        "schemaValid": true,
+        "signedBy": "from",
+        "valid": true
+      }
+    },
+    {
+      "file": "invalid-feedback-anonymous-with-key.json",
+      "schema": "feedback.schema.json",
+      "expect": {
+        "schemaValid": false
+      }
+    },
+    {
+      "file": "value-cases.json",
+      "schema": null,
+      "expect": {
+        "recompute": true
+      }
+    }
+  ]
+}

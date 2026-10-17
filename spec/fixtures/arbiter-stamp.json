@@ -1,0 +1,18 @@
+{
+  "type": "aevri.vledger.stamp",
+  "receiptDigest": "sha256:05d594483283fd99889fe8821ddbe50fe85c6b8e1552c2fbfc07064d975e9d6f",
+  "parties": [
+    "sha256:8fafa60f07f5817886e8c77c0eacf1ab28a3788b164a86e734b642839908ddf5",
+    "sha256:83b078f930462a41cbdf89bf37b01fe4b65fa5fb80bf48e182034e7d6cd856ac"
+  ],
+  "receivedAt": "2026-10-16T12:00:00Z",
+  "arbiter": {
+    "url": "https://aeilus.institute/arbiter/",
+    "key": {
+      "alg": "Ed25519",
+      "x": "lbEewrwGYn2zM3-YfvGoo-7elVC-mRjQptkbtqNM1tk"
+    },
+    "name": "ÆVRI arbiter (test key)"
+  },
+  "sig": "JWPiBC2EofbLvI7inMGlU-xm8nfpY9P1iBbBiTQ5J5ZOUvAn9WhwrQ_2xzw1uI8riyWpphwgT3K8PhQ7kwHODA"
+}

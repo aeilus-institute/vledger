@@ -1,0 +1,78 @@
+{
+  "receipt": {
+    "type": "aevri.vledger.receipt",
+    "version": 1,
+    "receiptId": "01a146c3-bd10-7245-b64a-0776a17a684c",
+    "occurredAt": "2026-10-16T10:00:00Z",
+    "parties": [
+      {
+        "role": "giver",
+        "key": {
+          "alg": "Ed25519",
+          "x": "30C9yfNzNl5LQg7pUH_xGvaODP4doFBeLPel4wl9PDc"
+        },
+        "label": "Anna"
+      },
+      {
+        "role": "receiver",
+        "key": {
+          "alg": "Ed25519",
+          "x": "NZaxmJZy1D3YyMikLsTaZqY49rJACaW4NIHIPicjS1A"
+        }
+      }
+    ],
+    "elements": [
+      {
+        "from": 0,
+        "to": 1,
+        "digest": "sha256:ed8ad1ff4ad0480c8ff01ee6df62a77b3cc1cbf8c4f47a0298f81d34c7a8300c",
+        "type": "thing"
+      }
+    ],
+    "arbiters": [
+      {
+        "party": 0,
+        "url": "https://aeilus.institute/arbiter/",
+        "key": {
+          "alg": "Ed25519",
+          "x": "lbEewrwGYn2zM3-YfvGoo-7elVC-mRjQptkbtqNM1tk"
+        },
+        "name": "ÆVRI arbiter (test key)"
+      },
+      {
+        "party": 1,
+        "url": "https://aeilus.institute/arbiter/",
+        "key": {
+          "alg": "Ed25519",
+          "x": "lbEewrwGYn2zM3-YfvGoo-7elVC-mRjQptkbtqNM1tk"
+        },
+        "name": "ÆVRI arbiter (test key)"
+      }
+    ],
+    "mandate": {
+      "mode": "binding",
+      "arbiter": {
+        "url": "https://aeilus.institute/arbiter/",
+        "key": {
+          "alg": "Ed25519",
+          "x": "lbEewrwGYn2zM3-YfvGoo-7elVC-mRjQptkbtqNM1tk"
+        },
+        "name": "ÆVRI arbiter (test key)"
+      },
+      "scope": "Whether the pen was a gift or a loan",
+      "rulesUrl": "https://aeilus.institute/arbiter/rules/"
+    }
+  },
+  "signatures": [
+    {
+      "party": 0,
+      "alg": "Ed25519",
+      "sig": "ViekyudSuKZHGqas0yUE4ZQzv1Hzd3KWOA_HnFKMXlhw_cioDEjHxuRMb-_j1eo87QAL5jOcoW8Rdqev7YrLBA"
+    },
+    {
+      "party": 1,
+      "alg": "Ed25519",
+      "sig": "vzoIbf5p9ZQ8ApuWGYGvQlL-t3ZqGExSo7O5nFYN5Fd1gecPdGJJJNdlWedYjw_PyTttirWQyInZ06jdXlpMAw"
+    }
+  ]
+}

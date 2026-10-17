@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aeilus.institute/schema/vledger/1/profile.schema.json",
+  "title": "aevri.vledger 1.0 signed value profile of an organisation or a state body",
+  "type": "object", "required": ["profile", "sig"],
+  "properties": {
+    "profile": {
+      "type": "object", "required": ["type", "version", "profileId", "kind", "name", "key", "updatedAt", "elements"],
+      "properties": {
+        "type": { "const": "aevri.vledger.profile" },
+        "version": { "const": 1 },
+        "profileId": { "type": "string", "pattern": "^https://" },
+        "kind": { "enum": ["organization", "state"] },
+        "name": { "$ref": "common.schema.json#/$defs/line" },
+        "key": { "$ref": "common.schema.json#/$defs/publicKey" },
+        "updatedAt": { "$ref": "common.schema.json#/$defs/time" },
+        "feedback": { "type": "object", "required": ["endpoint"], "properties": { "endpoint": { "type": "string", "pattern": "^https://" }, "anonymousAccepted": { "const": true }, "minAggregate": { "type": "integer", "minimum": 5 } } },
+        "arbiter": { "$ref": "common.schema.json#/$defs/arbiterRef" },
+        "elements": { "type": "array", "items": { "type": "object", "required": ["elementId", "label", "category", "promise"],
+          "properties": {
+            "elementId": { "type": "string", "pattern": "^[A-Za-z0-9._-]{1,100}$" },
+            "label": { "$ref": "common.schema.json#/$defs/line" },
+            "category": { "enum": ["thing", "service", "information", "time", "money", "right", "decision", "relation", "other"] },
+            "promise": { "$ref": "common.schema.json#/$defs/text" },
+            "goalCategory": { "type": "string", "maxLength": 100 },
+            "plannedV": { "type": "number", "minimum": -1, "maximum": 1 }
+          } } }
+      }
+    },
+    "sig": { "$ref": "common.schema.json#/$defs/b64u" }
+  }
+}
