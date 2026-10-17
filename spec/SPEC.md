@@ -1,8 +1,10 @@
 # Value Wallet format and protocols - `aevri.vledger` 1.0
 
-Status: **draft 1.0-d4** (2026-10-17). Editor: Aeilus Value Research Institute (ÆVRI).
+Status: **draft 1.0-d5** (2026-10-17). Editor: Aeilus Value Research Institute (ÆVRI).
 Licence: CC BY 4.0 (this text), MIT (reference code and schemas). Requirements (Russian): TZ v0.2 and v0.3.
 Fixtures in `fixtures/` are produced by `reference/` (Web Crypto) and pass the independent `tools/verify_fixtures.py`.
+Changes from d4 (stage L4): bridges to VET and VSS (section 16, `schema/bridge.schema.json`); `event.vssRef`;
+the `vet` result in assessments; `settings.bridges`.
 Changes from d3 (stage L3): `opening` in event offers; the optional card directory of relays; the institute relay
 and arbiter addresses (`openapi/relay.yaml`, `openapi/arbiter.yaml`).
 Changes from d2 (stage L2): storage providers keep envelopes as a set and each device rebuilds its chain; restore
@@ -283,3 +285,56 @@ A conforming wallet validates documents against `schema/`; never stores or sends
 the holder asked for; verifies the chain on import; and reproduces every fixture in `fixtures/` (open with the test
 passphrase, decrypt and verify messages, check receipts, stamps, rulings, the registry and cards, recompute `w`, `v`,
 `spentV`, `e`, plan factors, request blocking and the retro rule).
+
+## 16. Bridges to VET and VSS (stage L4)
+
+The wallet, VET (Value Estimation Tool) and VSS (Value Stream Schema editor) stay separate tools. They talk only
+through `postMessage` between a page and the page it embeds in an `iframe`, on the same origin: each side checks
+`event.origin === location.origin` and `event.source` (the frame it opened, or `window.parent`), and posts to
+`location.origin`, never `*`. A message is an envelope `{protocol, version: 1, type, requestId, payload}`; a reply
+carries the `requestId` of the request; replies to another `requestId` are ignored. `schema/bridge.schema.json`
+describes the payloads. Nothing in a bridge is sent to a server.
+
+### 16.1 Estimating an event in VET (the wallet hosts VET)
+
+Envelope `protocol: "aevri.vet"` (the protocol VET already speaks with VSS).
+
+1. The wallet opens `/tools/vet/embed.php?host=ledger` and waits for `vet.ready {capabilities}`. VET that supports
+   this mode lists `ledger-receiver-v1`; without it the wallet says VET cannot estimate events yet and closes.
+2. The wallet sends `ledger.open`:
+   `{mode: "receiver", ledgerRef: {ledgerId, entryId, assessorId}, title, items: [{title, ledgerRef, typeName?}],
+   axes: {out: {label}, in: {label}}, lang, extensions: {aevriLedger: {schemaVersion: "1.0", boardSnapshot?, boardId?}}}`.
+   `ledgerId` is the wallet id, `entryId` the event root id, `assessorId` the wallet address. One item per object of
+   the event, or one item named after the action when the event has no objects. The out axis is what the holder
+   received (it may be negative: harm), the in axis what receiving it cost the holder. Labels are in the holder's
+   language. A repeated `ledger.open` with the same `requestId` MUST NOT create a second board.
+3. VET shows a board with exactly these items (the holder may add more; it never shows other people's items) and
+   answers `vet.result`: `{boardId, ledgerRef, items, totals, axes, extensions: {aevriLedger: {schemaVersion: "1.0",
+   resultId, resultRevision, boardSnapshot}}}`, where `items` and `totals` are as in the VSS result. Or `vet.cancel {}`,
+   which changes nothing.
+4. The wallet checks that `ledgerRef` is the one it sent and keeps the result in the assessment it is editing as
+   `vet: {boardId, resultId, revision, totals, axes, receivedAt, snapshotHash, boardSnapshot}`, `snapshotHash` being
+   `sha256:` of the JCS form of `boardSnapshot`. Opening VET again for the same event sends the stored snapshot, so the
+   same board continues (key `{ledgerId, entryId, assessorId}`, not the VSS key `{vssSchemaId, flowId}`).
+5. VET totals are on the holder's own VET scales. The wallet shows them next to `v` and `spentV` and MAY offer them as
+   `ownScore`; it MUST NOT convert them into `v` silently.
+
+### 16.2 Transfers of a VSS flow (VSS hosts the wallet)
+
+Envelope `protocol: "aevri.vledger"`. VSS opens `/tools/vledger/?embed=vss` in an `iframe`; the wallet page sends
+`Content-Security-Policy: frame-ancestors 'self'`, so only pages of the same site can embed it. The holder opens or
+creates the wallet inside the frame as usual; the passphrase never leaves the frame.
+
+- `ledger.ready {capabilities: ["transfers-v1"]}`: sent by the wallet once a wallet is open (not before).
+- `vss.transfer.open {transferContext}`: VSS asks to record a transfer along a flow. `transferContext` is
+  `{flowRef: {vssSchemaId, flowId, flowLabel?, sourceNode?: {name}, targetNode?: {name}}, elementType?: {id, name,
+  kind}, item?: {boardId, itemId, title}}`. It only pre-fills the event dialog; the holder confirms or cancels.
+  The event keeps `vssRef: {vssSchemaId, flowId, flowLabel?, elementTypeId?, item?}`.
+- `ledger.transfer.saved {ledgerRef: {ledgerId, entryId}, summary}` or `ledger.cancel {}`.
+- `vss.transfers.list {flowRef}` -> `ledger.transfers {flowRef, transfers: [{ledgerRef, summary}]}`: the events of
+  this wallet with that `vssRef`.
+- `vss.transfer.summary {entryId}` -> `ledger.transfer.summary {ledgerRef, summary}`.
+
+`summary` is what the holder allowed (`settings.bridges.vss.share`): by default `"fact"`, that is `{occurredAt,
+role, assessed: boolean}`; with `"value"` also `{v, spentV, phase}` of the latest assessment. VSS shows transfers as
+their own layer and never adds them to its planned VET estimate. Estimates stay in the wallet; VSS never edits them.

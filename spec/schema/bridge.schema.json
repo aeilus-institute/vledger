@@ -1,0 +1,534 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aeilus.institute/schema/vledger/1/bridge.schema.json",
+  "title": "aevri.vledger 1.0-d5 bridges to VET and VSS (SPEC 16)",
+  "$defs": {
+    "vetEnvelope": {
+      "type": "object",
+      "required": [
+        "protocol",
+        "version",
+        "type",
+        "requestId",
+        "payload"
+      ],
+      "properties": {
+        "protocol": {
+          "const": "aevri.vet"
+        },
+        "version": {
+          "const": 1
+        },
+        "type": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "payload": {
+          "type": "object"
+        }
+      }
+    },
+    "ledgerEnvelope": {
+      "type": "object",
+      "required": [
+        "protocol",
+        "version",
+        "type",
+        "requestId",
+        "payload"
+      ],
+      "properties": {
+        "protocol": {
+          "const": "aevri.vledger"
+        },
+        "version": {
+          "const": 1
+        },
+        "type": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "payload": {
+          "type": "object"
+        }
+      }
+    },
+    "flowRef": {
+      "type": "object",
+      "required": [
+        "vssSchemaId",
+        "flowId"
+      ],
+      "properties": {
+        "vssSchemaId": {
+          "type": "string"
+        },
+        "flowId": {
+          "type": "string"
+        },
+        "flowLabel": {
+          "type": "string"
+        },
+        "sourceNode": {
+          "type": "object"
+        },
+        "targetNode": {
+          "type": "object"
+        }
+      }
+    },
+    "ledgerRef": {
+      "type": "object",
+      "required": [
+        "ledgerId",
+        "entryId"
+      ],
+      "properties": {
+        "ledgerId": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "entryId": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "assessorId": {
+          "$ref": "common.schema.json#/$defs/address"
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "occurredAt",
+        "assessed"
+      ],
+      "properties": {
+        "occurredAt": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "assessed": {
+          "type": "boolean"
+        },
+        "v": {
+          "type": "number"
+        },
+        "spentV": {
+          "type": "number"
+        },
+        "phase": {
+          "enum": [
+            "realized",
+            "retro"
+          ]
+        }
+      }
+    },
+    "ledgerOpen": {
+      "type": "object",
+      "required": [
+        "mode",
+        "ledgerRef",
+        "items",
+        "axes"
+      ],
+      "properties": {
+        "mode": {
+          "const": "receiver"
+        },
+        "ledgerRef": {
+          "type": "object",
+          "required": [
+            "ledgerId",
+            "entryId"
+          ],
+          "properties": {
+            "ledgerId": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "entryId": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "assessorId": {
+              "$ref": "common.schema.json#/$defs/address"
+            }
+          }
+        },
+        "title": {
+          "type": "string"
+        },
+        "lang": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "title",
+              "ledgerRef"
+            ],
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "typeName": {
+                "type": "string"
+              },
+              "ledgerRef": {
+                "type": "object",
+                "required": [
+                  "ledgerId",
+                  "entryId"
+                ],
+                "properties": {
+                  "ledgerId": {
+                    "$ref": "common.schema.json#/$defs/uuid"
+                  },
+                  "entryId": {
+                    "$ref": "common.schema.json#/$defs/uuid"
+                  },
+                  "objectIndex": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        "axes": {
+          "type": "object",
+          "required": [
+            "out",
+            "in"
+          ],
+          "properties": {
+            "out": {
+              "type": "object",
+              "required": [
+                "label"
+              ]
+            },
+            "in": {
+              "type": "object",
+              "required": [
+                "label"
+              ]
+            }
+          }
+        },
+        "extensions": {
+          "type": "object",
+          "properties": {
+            "aevriLedger": {
+              "type": "object",
+              "properties": {
+                "schemaVersion": {
+                  "type": "string"
+                },
+                "boardSnapshot": {
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "boardId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "vetResult": {
+      "type": "object",
+      "required": [
+        "boardId",
+        "ledgerRef",
+        "items",
+        "totals"
+      ],
+      "properties": {
+        "boardId": {
+          "type": "string"
+        },
+        "ledgerRef": {
+          "type": "object",
+          "required": [
+            "ledgerId",
+            "entryId"
+          ],
+          "properties": {
+            "ledgerId": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "entryId": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "assessorId": {
+              "$ref": "common.schema.json#/$defs/address"
+            }
+          }
+        },
+        "items": {
+          "type": "array"
+        },
+        "totals": {
+          "type": "object"
+        },
+        "axes": {
+          "type": "object"
+        },
+        "extensions": {
+          "type": "object",
+          "properties": {
+            "aevriLedger": {
+              "type": "object",
+              "required": [
+                "resultId",
+                "boardSnapshot"
+              ],
+              "properties": {
+                "schemaVersion": {
+                  "type": "string"
+                },
+                "resultId": {
+                  "type": "string"
+                },
+                "resultRevision": {
+                  "type": "number"
+                },
+                "boardSnapshot": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "transferContext": {
+      "type": "object",
+      "required": [
+        "flowRef"
+      ],
+      "properties": {
+        "flowRef": {
+          "type": "object",
+          "required": [
+            "vssSchemaId",
+            "flowId"
+          ],
+          "properties": {
+            "vssSchemaId": {
+              "type": "string"
+            },
+            "flowId": {
+              "type": "string"
+            },
+            "flowLabel": {
+              "type": "string"
+            },
+            "sourceNode": {
+              "type": "object"
+            },
+            "targetNode": {
+              "type": "object"
+            }
+          }
+        },
+        "elementType": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "value",
+                "anti_value"
+              ]
+            }
+          }
+        },
+        "item": {
+          "type": "object",
+          "properties": {
+            "boardId": {
+              "type": "string"
+            },
+            "itemId": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "transferSaved": {
+      "type": "object",
+      "required": [
+        "ledgerRef",
+        "summary"
+      ],
+      "properties": {
+        "ledgerRef": {
+          "type": "object",
+          "required": [
+            "ledgerId",
+            "entryId"
+          ],
+          "properties": {
+            "ledgerId": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "entryId": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "assessorId": {
+              "$ref": "common.schema.json#/$defs/address"
+            }
+          }
+        },
+        "summary": {
+          "type": "object",
+          "required": [
+            "occurredAt",
+            "assessed"
+          ],
+          "properties": {
+            "occurredAt": {
+              "type": "string"
+            },
+            "role": {
+              "type": "string"
+            },
+            "assessed": {
+              "type": "boolean"
+            },
+            "v": {
+              "type": "number"
+            },
+            "spentV": {
+              "type": "number"
+            },
+            "phase": {
+              "enum": [
+                "realized",
+                "retro"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "transfers": {
+      "type": "object",
+      "required": [
+        "flowRef",
+        "transfers"
+      ],
+      "properties": {
+        "flowRef": {
+          "type": "object",
+          "required": [
+            "vssSchemaId",
+            "flowId"
+          ],
+          "properties": {
+            "vssSchemaId": {
+              "type": "string"
+            },
+            "flowId": {
+              "type": "string"
+            },
+            "flowLabel": {
+              "type": "string"
+            },
+            "sourceNode": {
+              "type": "object"
+            },
+            "targetNode": {
+              "type": "object"
+            }
+          }
+        },
+        "transfers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "ledgerRef",
+              "summary"
+            ],
+            "properties": {
+              "ledgerRef": {
+                "type": "object",
+                "required": [
+                  "ledgerId",
+                  "entryId"
+                ],
+                "properties": {
+                  "ledgerId": {
+                    "$ref": "common.schema.json#/$defs/uuid"
+                  },
+                  "entryId": {
+                    "$ref": "common.schema.json#/$defs/uuid"
+                  },
+                  "assessorId": {
+                    "$ref": "common.schema.json#/$defs/address"
+                  }
+                }
+              },
+              "summary": {
+                "type": "object",
+                "required": [
+                  "occurredAt",
+                  "assessed"
+                ],
+                "properties": {
+                  "occurredAt": {
+                    "type": "string"
+                  },
+                  "role": {
+                    "type": "string"
+                  },
+                  "assessed": {
+                    "type": "boolean"
+                  },
+                  "v": {
+                    "type": "number"
+                  },
+                  "spentV": {
+                    "type": "number"
+                  },
+                  "phase": {
+                    "enum": [
+                      "realized",
+                      "retro"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

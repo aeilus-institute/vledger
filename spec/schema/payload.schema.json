@@ -592,6 +592,44 @@
             "$ref": "arbiter.schema.json#/$defs/ruling"
           }
         },
+        "vssRef": {
+          "type": "object",
+          "required": [
+            "vssSchemaId",
+            "flowId"
+          ],
+          "properties": {
+            "vssSchemaId": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "flowId": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "flowLabel": {
+              "$ref": "common.schema.json#/$defs/line"
+            },
+            "elementTypeId": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "item": {
+              "type": "object",
+              "properties": {
+                "boardId": {
+                  "type": "string"
+                },
+                "itemId": {
+                  "type": "string"
+                },
+                "title": {
+                  "$ref": "common.schema.json#/$defs/line"
+                }
+              }
+            }
+          }
+        },
         "cases": {
           "type": "array",
           "items": {
@@ -869,6 +907,21 @@
             },
             "snapshotHash": {
               "$ref": "common.schema.json#/$defs/sha256"
+            },
+            "revision": {
+              "type": "number"
+            },
+            "totals": {
+              "type": "object"
+            },
+            "axes": {
+              "type": "object"
+            },
+            "receivedAt": {
+              "$ref": "common.schema.json#/$defs/time"
+            },
+            "boardSnapshot": {
+              "type": "object"
             }
           }
         }
@@ -962,6 +1015,23 @@
           "items": {
             "type": "string",
             "pattern": "^https://"
+          }
+        },
+        "bridges": {
+          "type": "object",
+          "properties": {
+            "vss": {
+              "type": "object",
+              "properties": {
+                "share": {
+                  "enum": [
+                    "fact",
+                    "value"
+                  ],
+                  "default": "fact"
+                }
+              }
+            }
           }
         },
         "arbiters": {

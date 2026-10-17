@@ -7,6 +7,7 @@ import { makeProvider, restoreCode, parseRestoreCode, AEVRI_URL, AEVRI_RELAY, AE
 import * as V from './vledger-value.js';
 import * as C from './vledger-crypto.js';
 import { qrSvg } from './vledger-qr.js';
+import { vetOpenPayload, openVet, embedForVss, vssRefOf } from './vledger-bridge.js';
 
 const LANGS = ['en', 'ru'];
 let L = {};
@@ -25,6 +26,22 @@ function readLink() {
     if (a) return { address: a.address, name: a.name, contactKind: a.kind, kind: 'contact' };
   } catch { /* ignore a malformed link */ }
   return null;
+}
+
+// VET on the same site (SPEC 16.1); tests point it at a mock.
+let vetUrl = null;
+const vetAddress = () => vetUrl || new URL((lang === 'en' ? '' : '/' + lang) + '/tools/vet/embed.php?host=ledger', location.origin).href;
+
+// The wallet inside VSS (SPEC 16.2): only with ?embed=vss and a parent page.
+const vss = new URLSearchParams(location.search).get('embed') === 'vss' ? embedForVss({ getWallet: () => wallet, recordTransfer }) : { on: false, ready() {}, reset() {} };
+
+async function recordTransfer(ctx) {
+  tab = 'timeline'; render();
+  const src = ctx.flowRef.sourceNode?.name && contacts().find((c) => c.body.name === ctx.flowRef.sourceNode.name);
+  const what = ctx.item?.title || ctx.elementType?.name;
+  const id = await eventDialog(null, { role: 'affected', actor: src ? src.rootId : '', action: ctx.flowRef.flowLabel || t('br.transfer'),
+    objects: what ? [{ label: String(what).slice(0, 300) }] : [], vssRef: vssRefOf(ctx) });
+  return id ? wallet.rootOf(id) : null;
 }
 
 async function runPending() {
@@ -149,6 +166,7 @@ function touch() {
 function lockNow() {
   if (wallet) wallet.lock();
   wallet = null;
+  vss.reset();
   notices = [];
   render();
 }
@@ -610,6 +628,7 @@ function assessmentView(a) {
   return h('div', { class: 'vw-assess' },
     typeof b.v === 'number' && (b.contributions || []).length ? h('div', { class: b.v < 0 ? 'vw-v vw-neg' : 'vw-v' }, t(b.v < 0 ? 'val.short.harm' : 'val.short', { v: pct(Math.abs(b.v)) })) : null,
     b.spentV > 0 ? h('div', { class: 'vw-muted vw-small' }, t('val.spentShort', { v: pct(b.spentV) })) : null,
+    b.vet ? h('div', { class: 'vw-muted vw-small' }, t('vet.line', { out: num(b.vet.totals?.sumOut ?? 0), in: num(b.vet.totals?.sumIn ?? 0), n: b.vet.totals?.count ?? 0 })) : null,
     b.ownScore ? h('div', { class: 'vw-muted vw-small' }, t('as.ownShow', { v: b.ownScore.value.toLocaleString(lang), u: b.ownScore.unit || '' })) : null,
     b.reference ? h('div', { class: 'vw-chip' }, t('as.isReference')) : null,
     (b.gained || []).map((x) => h('div', { class: 'vw-gained' }, '+ ' + x)),
@@ -711,6 +730,7 @@ function eventDialog(ev, preset = {}) {
       if (sys.value) body.systemId = sys.value;
       if (approx.checked) body.approx = true;
       if (b.registryRef) body.registryRef = b.registryRef;
+      if (b.vssRef) body.vssRef = b.vssRef;
       const id = await guard(() => (ev ? wallet.correct(ev.rootId, body) : wallet.add('event', body, b.registryRef ? { source: 'registry' } : {})));
       close(id); render();
     } },
@@ -873,6 +893,19 @@ function assessDialog(evRootId, existing, preset = {}) {
     const planCount = h('input', { type: 'range', min: 0, max: 1, step: 0.05, value: b.planCount ?? V.planFactor(wallet.settings(), { contactId: ev.body.actor, systemId: ev.body.systemId }) });
     const planOut = h('output', {}, pct(Number(planCount.value)));
     planCount.addEventListener('input', () => { planOut.textContent = pct(Number(planCount.value)); });
+    let vet = b.vet || null;
+    const vetLine = h('p', { class: 'vw-muted vw-small', 'aria-live': 'polite' });
+    const useVet = h('button', { type: 'button', class: 'vw-link', hidden: true, onclick: () => { own.value = String(vet.totals.sumOut); ownU.value = t('vet.unit'); } }, t('vet.useOwn'));
+    const showVet = () => {
+      vetLine.textContent = vet ? t('vet.line', { out: num(vet.totals.sumOut ?? 0), in: num(vet.totals.sumIn ?? 0), n: vet.totals.count ?? 0 }) : t('vet.none');
+      useVet.hidden = !(vet && Number.isFinite(vet.totals.sumOut));
+    };
+    showVet();
+    const vetBtn = h('button', { type: 'button', class: 'vw-btn vw-ghost', onclick: async () => {
+      const r = await openVet({ url: vetAddress(), payload: vetOpenPayload(wallet, ev, vet, { lang, labels: { title: phrase(ev), out: t('vet.out'), in: t('vet.in') } }),
+        ui: { title: t('vet.title'), loading: t('vet.loading'), unsupported: t('vet.unsupported'), timeout: t('vet.timeout'), close: t('close') } });
+      if (r) { vet = r; showVet(); }
+    } }, t(vet ? 'vet.again' : 'vet.open'));
     refresh();
     return h('div', { class: 'vw-assess-layout' },
       orientation(ev.body.systemId, evRootId),
@@ -887,6 +920,7 @@ function assessDialog(evRootId, existing, preset = {}) {
         if (reasons.value.trim()) body.reasons = reasons.value.trim();
         if (check.value) body.checkAfter = check.value;
         if (hasPlan) body.planCount = Number(planCount.value);
+        if (vet) body.vet = vet;
         const id = await guard(() => (existing ? wallet.correct(existing.rootId, body) : wallet.add('assessment', body)));
         close(true); render();
         if (id && c.length) feelingCheck(evRootId, wallet.rootOf(id), body, r);
@@ -898,6 +932,7 @@ function assessDialog(evRootId, existing, preset = {}) {
       h('fieldset', {}, h('legend', {}, t('as.spent')), h('p', { class: 'vw-hint' }, t('as.spentHint')),
         spent.node, h('button', { type: 'button', class: 'vw-link', onclick: () => { spent.add(); refresh(); } }, t('as.addSpent'))),
       preview,
+      h('fieldset', {}, h('legend', {}, t('vet.legend')), h('p', { class: 'vw-hint' }, t('vet.hint')), vetLine, h('div', { class: 'vw-actions' }, vetBtn, useVet)),
       h('div', { class: 'vw-inline' }, field(t('as.own'), own, t('as.ownHint')), field(t('as.unit'), ownU)),
       hasPlan ? field(t('as.planCount'), h('div', { class: 'vw-inline' }, planCount, planOut), t('as.planCountHint')) : null,
       h('div', { class: 'vw-inline' }, field(t('as.conf'), conf), field(t('as.check'), check, t('as.checkHint'))),
@@ -1409,8 +1444,11 @@ function tabSettings() {
   const stDays = h('input', { type: 'number', min: 0, value: st.retentionDays ?? '' });
   const stPub = select(['no', 'anonymous', 'named', 'sender-choice'].map((k) => [k, t('sh.publishes.' + k)]), st.publishes);
   const types = wallet.list('element-type');
+  const vssShare = select([['fact', t('br.share.fact')], ['value', t('br.share.value')]], s.bridges?.vss?.share === 'value' ? 'value' : 'fact');
+  vssShare.addEventListener('change', async () => { const cur = wallet.settings(); await guard(() => wallet.saveSettings({ ...cur, bridges: { ...(cur.bridges || {}), vss: { share: vssShare.value } } })); toast(t('saved')); });
   return [
     relaySection(),
+    h('h2', {}, t('br.title')), h('p', { class: 'vw-hint' }, t('br.lead')), field(t('br.share'), vssShare),
     h('h2', {}, t('set.requests')), h('p', { class: 'vw-hint' }, t('set.requestsHint')),
     h('label', { class: 'vw-check' }, blockAll, h('span', {}, t('set.blockAll'))),
     sysBoxes.length ? h('fieldset', {}, h('legend', {}, t('set.blockSystems')), sysBoxes) : null,
@@ -1493,6 +1531,7 @@ async function render() {
   const foot = h('footer', { class: 'vw-foot' }, h('span', {}, wallet ? t('foot.unlocked') : t('foot.locked')), ' ', h('a', { href: 'https://aeilus.institute/tools/' }, 'ÆVRI'));
   app.replaceChildren(head, main, foot);
   if (wallet && pending) setTimeout(runPending, 0);
+  if (wallet) vss.ready();
 }
 
 export async function start() {
@@ -1504,4 +1543,5 @@ export async function start() {
   await render();
 }
 
-export const _test = { get wallet() { return wallet; }, render };
+export const _test = { get wallet() { return wallet; }, render, setVetUrl(u) { vetUrl = u; } };
+if (new URLSearchParams(location.search).has('selftest')) window.vledgerTest = _test; // tests that embed the page in a frame

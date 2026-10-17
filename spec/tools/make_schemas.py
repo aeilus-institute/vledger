@@ -38,6 +38,9 @@ defs = {
         'receiptOpening': {'type': 'object'},
         'stamps': {'type': 'array', 'items': {'$ref': 'arbiter.schema.json#/$defs/stamp'}},
         'rulings': {'type': 'array', 'items': {'$ref': 'arbiter.schema.json#/$defs/ruling'}},
+        'vssRef': {'type': 'object', 'required': ['vssSchemaId', 'flowId'], 'properties': {'vssSchemaId': {'type': 'string', 'maxLength': 100},
+            'flowId': {'type': 'string', 'maxLength': 100}, 'flowLabel': LINE, 'elementTypeId': {'type': 'string', 'maxLength': 100},
+            'item': {'type': 'object', 'properties': {'boardId': {'type': 'string'}, 'itemId': {'type': 'string'}, 'title': LINE}}}},
         'cases': {'type': 'array', 'items': {'type': 'object', 'required': ['caseId', 'arbiterUrl', 'request', 'openedAt', 'status'], 'properties': {
             'caseId': c('uuid'), 'arbiterUrl': {'type': 'string', 'format': 'uri'}, 'request': {'enum': ['attest', 'opinion', 'decision']},
             'openedAt': c('time'), 'status': {'enum': ['open', 'decided', 'declined']}, 'problem': {'type': 'string'}, 'reason': {'type': 'string', 'maxLength': 2000}}}}},
@@ -55,7 +58,8 @@ defs = {
         'v': {'type': 'number'}, 'spentV': {'type': 'number', 'minimum': 0}, 'planCount': {'type': 'number', 'minimum': 0, 'maximum': 1},
         'reference': {'type': 'boolean'}, 'confidence': {'enum': ['low', 'medium', 'high']}, 'reasons': TEXT,
         'checkAfter': c('date'),
-        'vet': {'type': 'object', 'required': ['snapshotHash'], 'properties': {'boardId': {'type': 'string'}, 'resultId': {'type': 'string'}, 'snapshotHash': c('sha256')}}}},
+        'vet': {'type': 'object', 'required': ['snapshotHash'], 'properties': {'boardId': {'type': 'string'}, 'resultId': {'type': 'string'}, 'snapshotHash': c('sha256'),
+            'revision': {'type': 'number'}, 'totals': {'type': 'object'}, 'axes': {'type': 'object'}, 'receivedAt': c('time'), 'boardSnapshot': {'type': 'object'}}}}},
     'fact': {'type': 'object', 'required': ['text', 'certainty'], 'properties': {
         'topic': {'type': 'string', 'maxLength': 100}, 'text': TEXT, 'certainty': {'enum': ['low', 'medium', 'high']},
         'exploring': {'type': 'boolean'}, 'goalIds': {'type': 'array', 'items': ID}}},
@@ -64,6 +68,7 @@ defs = {
         'planCountBy': {'type': 'array', 'items': {'type': 'object', 'required': ['factor'], 'properties': {'contactId': ID, 'systemId': ID, 'factor': {'type': 'number', 'minimum': 0, 'maximum': 1}}}},
         'requests': {'type': 'object', 'properties': {'blockAll': {'type': 'boolean'}, 'blockSystems': {'type': 'array', 'items': ID}, 'blockContacts': {'type': 'array', 'items': ID}}},
         'relays': {'type': 'array', 'items': {'type': 'string', 'pattern': '^https://'}},
+        'bridges': {'type': 'object', 'properties': {'vss': {'type': 'object', 'properties': {'share': {'enum': ['fact', 'value'], 'default': 'fact'}}}}},
         'arbiters': {'type': 'array', 'items': c('arbiterRef')},
         'providers': {'type': 'array', 'items': {'type': 'object', 'required': ['kind'], 'properties': {
             'kind': {'enum': ['device', 'file', 'aevri', 'github', 'webdav', 's3', 'custom']}, 'id': {'type': 'string', 'maxLength': 60},
@@ -188,6 +193,36 @@ registry = {
     'type': 'object', 'required': ['registry', 'sig'], 'properties': {'registry': reg_body, 'sig': c('b64u')},
 }
 
-for name, doc in [('payload', payload), ('receipt', receipt), ('card', card), ('message', message), ('registry', registry)]:
+flowRef = {'type': 'object', 'required': ['vssSchemaId', 'flowId'], 'properties': {'vssSchemaId': {'type': 'string'}, 'flowId': {'type': 'string'},
+    'flowLabel': {'type': 'string'}, 'sourceNode': {'type': 'object'}, 'targetNode': {'type': 'object'}}}
+ledgerRef = {'type': 'object', 'required': ['ledgerId', 'entryId'], 'properties': {'ledgerId': ID, 'entryId': ID, 'assessorId': c('address')}}
+summary = {'type': 'object', 'required': ['occurredAt', 'assessed'], 'properties': {'occurredAt': {'type': 'string'}, 'role': {'type': 'string'},
+    'assessed': {'type': 'boolean'}, 'v': {'type': 'number'}, 'spentV': {'type': 'number'}, 'phase': {'enum': ['realized', 'retro']}}}
+envelope = lambda proto: {'type': 'object', 'required': ['protocol', 'version', 'type', 'requestId', 'payload'], 'properties': {
+    'protocol': {'const': proto}, 'version': {'const': 1}, 'type': {'type': 'string'}, 'requestId': {'type': 'string'}, 'payload': {'type': 'object'}}}
+bridge = {
+    '$schema': S, '$id': B + 'bridge.schema.json', 'title': 'aevri.vledger 1.0-d5 bridges to VET and VSS (SPEC 16)',
+    '$defs': {
+        'vetEnvelope': envelope('aevri.vet'), 'ledgerEnvelope': envelope('aevri.vledger'), 'flowRef': flowRef, 'ledgerRef': ledgerRef, 'summary': summary,
+        'ledgerOpen': {'type': 'object', 'required': ['mode', 'ledgerRef', 'items', 'axes'], 'properties': {
+            'mode': {'const': 'receiver'}, 'ledgerRef': ledgerRef, 'title': {'type': 'string'}, 'lang': {'type': 'string'},
+            'items': {'type': 'array', 'items': {'type': 'object', 'required': ['title', 'ledgerRef'], 'properties': {'title': {'type': 'string'}, 'typeName': {'type': 'string'},
+                'ledgerRef': {'type': 'object', 'required': ['ledgerId', 'entryId'], 'properties': {'ledgerId': ID, 'entryId': ID, 'objectIndex': {'type': 'integer', 'minimum': 0}}}}}},
+            'axes': {'type': 'object', 'required': ['out', 'in'], 'properties': {'out': {'type': 'object', 'required': ['label']}, 'in': {'type': 'object', 'required': ['label']}}},
+            'extensions': {'type': 'object', 'properties': {'aevriLedger': {'type': 'object', 'properties': {'schemaVersion': {'type': 'string'}, 'boardSnapshot': {'type': ['object', 'null']}, 'boardId': {'type': ['string', 'null']}}}}}}},
+        'vetResult': {'type': 'object', 'required': ['boardId', 'ledgerRef', 'items', 'totals'], 'properties': {
+            'boardId': {'type': 'string'}, 'ledgerRef': ledgerRef, 'items': {'type': 'array'}, 'totals': {'type': 'object'}, 'axes': {'type': 'object'},
+            'extensions': {'type': 'object', 'properties': {'aevriLedger': {'type': 'object', 'required': ['resultId', 'boardSnapshot'], 'properties': {
+                'schemaVersion': {'type': 'string'}, 'resultId': {'type': 'string'}, 'resultRevision': {'type': 'number'}, 'boardSnapshot': {'type': 'object'}}}}}}},
+        'transferContext': {'type': 'object', 'required': ['flowRef'], 'properties': {'flowRef': flowRef,
+            'elementType': {'type': 'object', 'properties': {'id': {'type': 'string'}, 'name': {'type': 'string'}, 'kind': {'enum': ['value', 'anti_value']}}},
+            'item': {'type': 'object', 'properties': {'boardId': {'type': 'string'}, 'itemId': {'type': 'string'}, 'title': {'type': 'string'}}}}},
+        'transferSaved': {'type': 'object', 'required': ['ledgerRef', 'summary'], 'properties': {'ledgerRef': ledgerRef, 'summary': summary}},
+        'transfers': {'type': 'object', 'required': ['flowRef', 'transfers'], 'properties': {'flowRef': flowRef,
+            'transfers': {'type': 'array', 'items': {'type': 'object', 'required': ['ledgerRef', 'summary'], 'properties': {'ledgerRef': ledgerRef, 'summary': summary}}}}},
+    },
+}
+
+for name, doc in [('payload', payload), ('receipt', receipt), ('card', card), ('message', message), ('registry', registry), ('bridge', bridge)]:
     (OUT / (name + '.schema.json')).write_text(json.dumps(doc, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     print('wrote', name)

@@ -168,4 +168,6 @@ details input[type="number"] { width: 96px; }
 /* L2 */
 .vw-alert { border-color: var(--av-danger); background: var(--av-danger-bg); }
 .vw-alert p { margin: 6px 0 10px; }
+.vw-vet-dialog { width: min(1100px, calc(100vw - 16px)); }
+.vw-vet-frame { width: 100%; height: min(78vh, 760px); border: 1px solid var(--av-line); border-radius: 4px; background: #fff; }
 .vw-notice { border-color: var(--av-accent, #176B68); }
