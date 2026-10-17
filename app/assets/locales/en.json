@@ -538,5 +538,9 @@
   "reg.url": "Registry address",
   "reg.openGo": "Open",
   "reg.fromFile": "From a file",
-  "cs.declined": "The arbiter declined the case: {reason}"
+  "cs.declined": "The arbiter declined the case: {reason}",
+  "link.contact": "Open or create your wallet to add {name} to your contacts.",
+  "link.registry": "Open or create your wallet to assess a work from the registry at {host}.",
+  "link.known": "{name} is already in your contacts",
+  "reg.source": "Published at {host}, signed by its owner."
 }

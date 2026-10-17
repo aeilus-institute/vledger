@@ -168,3 +168,4 @@ details input[type="number"] { width: 96px; }
 /* L2 */
 .vw-alert { border-color: var(--av-danger); background: var(--av-danger-bg); }
 .vw-alert p { margin: 6px 0 10px; }
+.vw-notice { border-color: var(--av-accent, #176B68); }

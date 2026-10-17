@@ -12,6 +12,38 @@ const LANGS = ['en', 'ru'];
 let L = {};
 let lang = 'en';
 let wallet = null;
+// What the page was opened for (SPEC 3, 12): #vw1:... adds a contact; ?registry=<url>&item=<id> opens a work in a
+// registry. Kept until a wallet is open, then done once and removed from the address bar.
+let pending = readLink();
+
+function readLink() {
+  try {
+    const q = new URLSearchParams(location.search);
+    const reg = q.get('registry');
+    if (reg && /^(https:\/\/|http:\/\/(127\.0\.0\.1|localhost)[:/])/.test(reg)) return { kind: 'registry', url: reg, item: (q.get('item') || '').slice(0, 100) };
+    const a = C.parseAddress(decodeURIComponent(location.hash.slice(1)));
+    if (a) return { address: a.address, name: a.name, contactKind: a.kind, kind: 'contact' };
+  } catch { /* ignore a malformed link */ }
+  return null;
+}
+
+async function runPending() {
+  const p = pending;
+  pending = null;
+  try { history.replaceState(null, '', location.pathname); } catch { /* ignore */ }
+  if (p.kind === 'contact') {
+    if (p.address === wallet.address) return;
+    const known = wallet.contactByAddress(p.address);
+    tab = 'contacts'; render();
+    if (known) { toast(t('link.known', { name: known.body.name })); return; }
+    const kind = ['person', 'organization', 'state', 'group', 'device'].includes(p.contactKind) ? p.contactKind : 'person';
+    await contactDialog(null, { name: p.name || '', address: p.address, type: kind });
+  } else if (p.kind === 'registry') {
+    tab = 'timeline'; render();
+    const doc = await guard(() => fetchRegistry(p.url));
+    if (doc) await showRegistry(doc, 'url', p.item);
+  }
+}
 let tab = 'timeline';
 let filters = { system: '', role: '', contact: '' };
 let period = '90';
@@ -186,6 +218,8 @@ async function renderStart() {
   const box = h('div', { class: 'vw-start' },
     h('p', { class: 'vw-lead' }, t('start.lead')),
     h('ul', { class: 'vw-facts' }, h('li', {}, t('start.f1')), h('li', {}, t('start.f2')), h('li', {}, t('start.f3'))));
+  if (pending) box.prepend(h('div', { class: 'vw-card vw-notice', role: 'status' }, pending.kind === 'contact'
+    ? t('link.contact', { name: pending.name || short(pending.address) }) : t('link.registry', { host: new URL(pending.url).host })));
   if (list.length) {
     box.append(h('h2', {}, t('start.onDevice')));
     for (const w of list) {
@@ -708,14 +742,18 @@ function registryDialog() {
   });
 }
 
-async function showRegistry(doc, origin) {
+async function showRegistry(doc, origin, itemId = '') {
   const reg = doc?.registry;
   if (!reg || reg.type !== 'aevri.vledger.registry') { toast(t('reg.bad')); return; }
   const ok = await C.verify(C.keyOfAddress(reg.owner.card.address), C.te.encode(C.canon(reg)), doc.sig) && await C.verifyCard(reg.owner);
   if (!ok) { toast(t('reg.badSig')); return; }
+  const one = reg.items.filter((it) => it.itemId === itemId);
+  let host = '';
+  try { host = new URL(reg.registryUrl).host; } catch { /* a file without a valid address */ }
   await modal(t('reg.title', { name: reg.owner.card.name || short(reg.owner.card.address) }), (close) => h('div', {},
     h('p', { class: 'vw-hint' }, t('reg.hint')),
-    reg.items.map((it) => h('div', { class: 'vw-card' },
+    host ? h('p', { class: 'vw-muted vw-small' }, t('reg.source', { host })) : null,
+    (one.length ? one : reg.items).map((it) => h('div', { class: 'vw-card' },
       h('div', { class: 'vw-row' }, h('strong', {}, it.title), h('span', { class: 'vw-chip' }, t('reg.kind.' + it.kind))),
       it.plan ? h('p', { class: 'vw-plan' }, t('reg.promise', { p: it.plan.promise })) : null,
       it.affects ? h('p', { class: 'vw-muted' }, it.affects) : null,
@@ -1454,6 +1492,7 @@ async function render() {
   const main = h('main', { class: 'vw-main' }, wallet ? renderWallet() : await renderStart());
   const foot = h('footer', { class: 'vw-foot' }, h('span', {}, wallet ? t('foot.unlocked') : t('foot.locked')), ' ', h('a', { href: 'https://aeilus.institute/tools/' }, 'ÆVRI'));
   app.replaceChildren(head, main, foot);
+  if (wallet && pending) setTimeout(runPending, 0);
 }
 
 export async function start() {
