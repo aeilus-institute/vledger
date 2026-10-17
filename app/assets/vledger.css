@@ -119,3 +119,48 @@ details input[type="number"] { width: 96px; }
   .vw-dialog { padding: 0 12px 16px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* d2: timeline, roles, contacts, QR, orientation, analytics, inbox */
+.vw-toolbar { gap: 8px; flex-wrap: wrap; }
+.vw-badge { display: inline-block; min-width: 20px; padding: 0 6px; margin-left: 6px; border-radius: 999px; background: var(--av-accent); color: var(--av-on-accent); font-size: .75rem; line-height: 20px; text-align: center; }
+.vw-filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.vw-filters select { width: auto; min-width: 140px; flex: 1 1 140px; }
+.vw-day { font-family: var(--av-font-ui); font-size: .875rem; color: var(--av-muted); margin: 18px 0 6px; font-weight: 600; }
+.vw-chips { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.vw-chip-sys { background: var(--av-success-bg); }
+.vw-roles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.vw-radio { display: flex; gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid var(--av-line); border-radius: var(--av-radius); cursor: pointer; }
+.vw-radio:has(input:checked) { border-color: var(--av-accent); background: var(--av-soft); }
+.vw-sentence { border-left: 3px solid var(--av-accent); padding-left: 12px; margin-top: 12px; }
+.vw-picks { display: flex; flex-wrap: wrap; gap: 4px 14px; max-height: 160px; overflow: auto; }
+.vw-pick { margin: 4px 0; }
+.vw-assess-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.vw-orient { background: var(--av-soft); border-radius: var(--av-radius); padding: 10px 14px; font-size: .9375rem; }
+.vw-orient h3 { font-size: 1rem; margin: 4px 0 8px; }
+.vw-orient ul { margin: 4px 0 10px; padding-left: 18px; }
+.vw-me { text-align: left; }
+.vw-qr { width: min(220px, 60vw); background: #fff; padding: 4px; border-radius: var(--av-radius); }
+.vw-qr svg { display: block; width: 100%; height: auto; }
+.vw-addr { display: block; overflow-wrap: anywhere; font-size: .8125rem; margin-top: 8px; color: var(--av-muted); }
+.vw-video { width: 100%; max-height: 60vh; background: #000; border-radius: var(--av-radius); }
+.vw-inline-check { margin: 0; align-items: center; }
+.vw-goal { border-top: 1px solid var(--av-line); padding-top: 8px; margin-top: 8px; }
+.vw-new { border-color: var(--av-accent); }
+.vw-policy { background: var(--av-soft); }
+.vw-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 8px 0 4px; }
+.vw-kpi { background: var(--av-surface); border: 1px solid var(--av-line); border-radius: var(--av-radius); padding: 10px 12px; }
+.vw-kpi-n { font-family: var(--av-font-editorial); font-size: 1.5rem; }
+.vw-table-wrap { overflow-x: auto; }
+.vw-table { border-collapse: collapse; width: 100%; font-size: .9375rem; }
+.vw-table th, .vw-table td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--av-line); white-space: nowrap; }
+.vw-table th[scope="row"], .vw-table thead th:first-child { text-align: left; white-space: normal; }
+@media (min-width: 900px) {
+  .vw-dialog:has(.vw-assess-layout) { width: min(980px, calc(100vw - 16px)); }
+  .vw-assess-layout { grid-template-columns: 280px minmax(0, 1fr); align-items: start; }
+  .vw-orient { position: sticky; top: 56px; }
+}
+@media (max-width: 600px) {
+  .vw-roles { grid-template-columns: 1fr; }
+  .vw-kpis { grid-template-columns: 1fr 1fr 1fr; }
+  .vw-kpi-n { font-size: 1.125rem; }
+}

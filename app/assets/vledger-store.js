@@ -45,7 +45,10 @@ export const device = {
 
 // ---- wallet ----
 
-const DEFAULT_SETTINGS = { planCountDefault: 0, planCountBy: [], arbiters: [], providers: [{ kind: 'device' }] };
+const DEFAULT_SETTINGS = {
+  planCountDefault: 0, planCountBy: [], requests: { blockAll: false, blockSystems: [], blockContacts: [] },
+  relays: [], arbiters: [], providers: [{ kind: 'device' }], storage: { stores: false, publishes: 'no' },
+};
 
 export class Wallet {
   constructor(doc, session, store = device) {
@@ -60,7 +63,7 @@ export class Wallet {
     doc.extensions.label = label;
     const w = new Wallet(doc, session, store);
     await w.add('settings', { ...DEFAULT_SETTINGS });
-    await w.add('counterparty', { type: 'self', name: label || 'Me' });
+    await w.add('contact', { type: 'self', name: label || 'Me', address: session.address });
     return w;
   }
 
@@ -208,6 +211,77 @@ export class Wallet {
   }
 
   verify() { return C.verifyChain(this.doc); }
+
+  // ---- d2: self, card, messages, suggestions (SPEC 3, 11, 13) ----
+
+  get address() { return this.session.address; }
+
+  selfContact() { return this.list('contact').find((c) => c.body.type === 'self'); }
+
+  async card() {
+    const s = this.settings();
+    return C.makeCard(this.session, { kind: 'person', name: this.doc.extensions.label || undefined, storage: s.storage || { stores: false, publishes: 'no' } });
+  }
+
+  contactByAddress(address) { return this.list('contact').find((c) => c.body.address === address); }
+
+  // Add or update a contact from a signed card. Returns the contact root id.
+  async addCard(cardDoc) {
+    if (!(await C.verifyCard(cardDoc))) throw new Error('card signature does not verify');
+    const c = cardDoc.card;
+    const existing = this.contactByAddress(c.address);
+    const body = { type: c.kind, name: existing?.body.name || c.name || c.address.slice(0, 12), address: c.address, card: cardDoc };
+    if (existing) { await this.correct(existing.rootId, { ...existing.body, ...body, name: existing.body.name }); return existing.rootId; }
+    return this.add('contact', body);
+  }
+
+  // Encrypt an assessment share for a contact that has a card (SPEC 11). Returns the message to deliver.
+  async prepareShare(contactRootId, body, { about, anonymous = false } = {}) {
+    const c = this.get(contactRootId);
+    if (!c?.body.card) throw new Error('this contact has no card yet');
+    const msg = await C.sealMessage(c.body.card, body, anonymous ? null : this.session);
+    await this.add('message-out', { to: c.body.address, kind: body.kind, sentAt: msg.sentAt, envelopeDigest: await C.messageDigest(msg), ...(about ? { about } : {}) });
+    return msg;
+  }
+
+  // Receive one message. Blocked requests are dropped without a trace (returns {dropped: true}).
+  async receive(msg) {
+    const { body, from, verified } = await C.openMessage(this.session, msg);
+    if (body.kind === 'request' && C.requestBlocked(this.settings(), body, from, this.list('contact'), this.list('value-system'))) {
+      return { dropped: true };
+    }
+    const id = await this.add('message-in', { envelopeDigest: await C.messageDigest(msg), ...(from ? { from } : {}), verified, receivedAt: C.nowIso(), body, state: 'new' }, { source: 'message' });
+    if (body.kind === 'suggestion') await this.addSuggestions(body, from);
+    return { id, body, from, verified };
+  }
+
+  async addSuggestions(body, from) {
+    const self = this.selfContact();
+    let device = from ? this.contactByAddress(from) : null;
+    const deviceId = device ? device.rootId : await this.add('contact', { type: 'device', name: body.source || 'Device', ...(from ? { address: from } : {}) });
+    const ids = [];
+    for (const e of body.events) {
+      const resolve = async (name) => {
+        if (!name || /^(me|я)$/i.test(name.trim())) return self.rootId;
+        const found = this.list('contact').find((c) => c.body.name.toLowerCase() === name.trim().toLowerCase());
+        return found ? found.rootId : this.add('contact', { type: 'unknown', name: name.trim() });
+      };
+      const actor = await resolve(e.actor);
+      const affected = [];
+      for (const a of e.affected || []) affected.push(await resolve(a));
+      ids.push(await this.add('event', {
+        actor, action: e.action, objects: (e.objects || []).map((label) => ({ label })), affected,
+        role: actor === self.rootId ? 'actor' : (affected.includes(self.rootId) ? 'affected' : 'witness'),
+        occurredAt: e.occurredAt || C.nowIso(), status: 'suggested', suggestedBy: deviceId, stamps: [], rulings: [],
+      }, { source: 'device' }));
+    }
+    return ids;
+  }
+
+  async setMessageState(rootId, state) {
+    const m = this.get(rootId);
+    return this.correct(rootId, { ...m.body, state });
+  }
 
   // Re-wrap the DEK under a new passphrase; records are not re-encrypted (TZ CR-4).
   async changePassphrase(passphrase) {

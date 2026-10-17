@@ -1,14 +1,19 @@
-// Value Wallet L1 UI. Plain DOM, no framework. Talks only to vledger-store.js and vledger-value.js.
+// Value Wallet L1 UI (format aevri.vledger 1.0-d2). Plain DOM, no framework.
+// Timeline of events "someone did something with something or someone", contacts with addresses and QR,
+// value systems and goals, assessments with references and spent value, inbox, analytics, settings.
 
 import { Wallet, device, passphraseOk, inspectImport } from './vledger-store.js';
 import * as V from './vledger-value.js';
-import { nowIso } from './vledger-crypto.js';
+import * as C from './vledger-crypto.js';
+import { qrSvg } from './vledger-qr.js';
 
 const LANGS = ['en', 'ru'];
 let L = {};
 let lang = 'en';
 let wallet = null;
-let tab = 'exchanges';
+let tab = 'timeline';
+let filters = { system: '', role: '', contact: '' };
+let period = '90';
 let idleTimer = null;
 const IDLE_MS = 15 * 60 * 1000;
 
@@ -22,8 +27,7 @@ function t(key, vars = {}) {
 
 async function loadLang(code) {
   lang = LANGS.includes(code) ? code : 'en';
-  const base = new URL('./locales/', import.meta.url);
-  L = await (await fetch(new URL(lang + '.json', base))).json();
+  L = await (await fetch(new URL('./locales/' + lang + '.json', import.meta.url))).json();
   document.documentElement.lang = lang;
   try { localStorage.setItem('vledger.lang', lang); } catch { /* storage may be blocked */ }
 }
@@ -45,9 +49,11 @@ function h(tag, attrs = {}, ...kids) {
 }
 
 const $app = () => document.getElementById('app');
-const fmtPct = (x) => (Math.round(x * 1000) / 10).toLocaleString(lang) + '%';
+const pct = (x) => (Math.round(x * 1000) / 10).toLocaleString(lang) + '%';
+const num = (x) => (Math.round(x * 100) / 100).toLocaleString(lang);
 const today = () => new Date().toISOString().slice(0, 10);
 const lines = (s) => (s || '').split('\n').map((x) => x.trim()).filter(Boolean).map((x) => x.slice(0, 300));
+const short = (a) => (a ? a.slice(0, 10) + '...' + a.slice(-4) : '');
 
 function toast(msg) {
   const el = h('div', { class: 'vw-toast', role: 'status' }, msg);
@@ -55,7 +61,6 @@ function toast(msg) {
   setTimeout(() => el.remove(), 3500);
 }
 
-// Modal dialog. build(close) returns content; resolves with the value passed to close().
 function modal(title, build) {
   return new Promise((resolve) => {
     const dlg = h('dialog', { class: 'vw-dialog', 'aria-label': title });
@@ -64,18 +69,14 @@ function modal(title, build) {
     dlg.addEventListener('cancel', (e) => { e.preventDefault(); close(null); });
     document.body.append(dlg);
     dlg.showModal();
-    const first = dlg.querySelector('input, textarea, select');
+    const first = dlg.querySelector('input:not([type=radio]), textarea, select');
     if (first) first.focus();
   });
 }
 
-function field(label, input, hint) {
-  return h('label', { class: 'vw-field' }, h('span', { class: 'vw-label' }, label), input, hint ? h('span', { class: 'vw-hint' }, hint) : null);
-}
-
-function select(options, value) {
-  return h('select', {}, options.map(([v, label]) => h('option', { value: v, selected: v === value }, label)));
-}
+const field = (label, input, hint) => h('label', { class: 'vw-field' }, h('span', { class: 'vw-label' }, label), input, hint ? h('span', { class: 'vw-hint' }, hint) : null);
+const select = (options, value) => h('select', {}, options.map(([v, label]) => h('option', { value: v, selected: v === value }, label)));
+const submitRow = (label = t('save')) => h('div', { class: 'vw-actions' }, h('button', { class: 'vw-btn vw-primary', type: 'submit' }, label));
 
 async function guard(fn) {
   try { return await fn(); } catch (e) { console.error(e); toast(t('err.generic', { msg: e.message })); return null; }
@@ -116,14 +117,71 @@ function lockNow() {
   render();
 }
 
+// ---- model helpers ----
+
+const selfId = () => wallet.selfContact()?.rootId;
+const contacts = () => wallet.list('contact');
+const systems = () => wallet.list('value-system');
+const systemsForValue = () => systems().map((s) => ({ id: s.rootId, W: s.body.W, status: s.body.status }));
+const goalsForValue = () => wallet.list('goal').map((g) => ({ id: g.rootId, S: g.body.S, N: g.body.N ?? g.body.S, status: g.body.status, systemId: g.body.systemId, title: g.body.title }));
+const events = (all = false) => wallet.list('event').filter((e) => all || e.body.status === 'confirmed');
+const assessments = () => wallet.list('assessment');
+const nameOf = (id) => (id === selfId() ? t('me.subj') : wallet.get(id)?.body.name || t('cp.unknown'));
+const objName = (id) => (id === selfId() ? t('me.obj') : wallet.get(id)?.body.name || t('cp.unknown'));
+// The registry owner is the other side of an event with a registry object (TZ v0.3 EV-3).
+const involves = (e, c) => e.body.actor === c.rootId || (e.body.affected || []).includes(c.rootId) || (!!c.body.address && e.body.registryRef?.owner === c.body.address);
+const withOwner = (e) => {
+  const b = { id: e.rootId, ...e.body };
+  const owner = b.registryRef?.owner && wallet.contactByAddress(b.registryRef.owner);
+  if (owner && b.actor === selfId() && !(b.affected || []).length) b.affected = [owner.rootId];
+  return b;
+};
+const sysTitle = (id) => (id ? wallet.get(id)?.body.title : '') || t('sys.none');
+
+function phrase(ev) {
+  const b = ev.body;
+  if (b.actionType === 'registry-event') return b.action + (b.affected?.length ? ' → ' + b.affected.map(objName).join(', ') : '');
+  const objs = (b.objects || []).map((o) => o.label + (o.quantity != null ? ` (${o.quantity}${o.unit ? ' ' + o.unit : ''})` : '')).join(', ');
+  const aff = (b.affected || []).map(objName).join(', ');
+  let s = `${nameOf(b.actor)} ${b.action}`;
+  if (objs) s += ' ' + objs;
+  if (aff) s += objs ? ' ' + t('phrase.with', { names: aff }) : ' ' + aff;
+  return s;
+}
+
+function valueOf(contributions, spent = []) {
+  return V.assessValue(goalsForValue(), systemsForValue(), contributions, spent);
+}
+
+function registryRefs(systemId) {
+  const sys = systemId && wallet.get(systemId);
+  if (!sys?.body.registryUrl) return [];
+  const imp = wallet.list('import').find((i) => i.body.originId === sys.body.registryUrl);
+  return (imp?.body.payload?.registry?.references || []).map((r) => ({ phrase: r.phrase, v: r.v, words: r.words, public: true }));
+}
+
+function referencesFor(systemId, excludeEventId) {
+  const own = assessments().filter((a) => a.body.reference && typeof a.body.v === 'number' && a.body.eventId !== excludeEventId).map((a) => {
+    const ev = wallet.get(a.body.eventId);
+    return ev && ev.body.systemId === systemId ? { phrase: phrase(ev), v: a.body.v, public: false } : null;
+  }).filter(Boolean);
+  return [...own, ...registryRefs(systemId)];
+}
+
+function goalProgress(goalRootId) {
+  const g = wallet.get(goalRootId);
+  if (!g) return 0;
+  const N = g.body.N ?? g.body.S;
+  return assessments().flatMap((a) => (a.body.contributions || []).filter((c) => c.goalId === goalRootId)).reduce((s, c) => s + V.progressShare({ S: g.body.S, N }, c), 0);
+}
+
 // ---- start screen ----
 
 async function renderStart() {
   const list = await guard(() => device.list()) || [];
   const box = h('div', { class: 'vw-start' },
     h('p', { class: 'vw-lead' }, t('start.lead')),
-    h('ul', { class: 'vw-facts' }, h('li', {}, t('start.f1')), h('li', {}, t('start.f2')), h('li', {}, t('start.f3'))),
-  );
+    h('ul', { class: 'vw-facts' }, h('li', {}, t('start.f1')), h('li', {}, t('start.f2')), h('li', {}, t('start.f3'))));
   if (list.length) {
     box.append(h('h2', {}, t('start.onDevice')));
     for (const w of list) {
@@ -146,8 +204,7 @@ function unlockDialog(walletId, label, doc) {
     return h('form', { onsubmit: async (e) => {
       e.preventDefault(); btn.disabled = true; msg.textContent = t('unlock.wait');
       try {
-        const d = doc || await device.get(walletId);
-        wallet = await Wallet.unlock(d, pass.value);
+        wallet = await Wallet.unlock(doc || await device.get(walletId), pass.value);
         pass.value = '';
         close(true); touch(); render();
       } catch { msg.textContent = t('unlock.wrong'); btn.disabled = false; }
@@ -171,7 +228,7 @@ function createDialog() {
       btn.disabled = true; msg.textContent = t('create.wait');
       wallet = await guard(() => Wallet.create(p1.value, { label: label.value.trim() }));
       p1.value = p2.value = '';
-      if (wallet) { close(true); touch(); tab = 'exchanges'; render(); } else btn.disabled = false;
+      if (wallet) { close(true); touch(); tab = 'timeline'; render(); } else btn.disabled = false;
     } },
     field(t('create.label'), label, t('create.labelHint')),
     field(t('create.pass'), p1, t('create.passHint')),
@@ -184,12 +241,12 @@ function createDialog() {
 async function importDialog() {
   const doc = await pickFile();
   if (!doc) return;
+  if (doc.type === 'aevri.vledger.message') { if (wallet) await receiveMessage(doc); else toast(t('import.openFirst')); return; }
   const ins = await inspectImport(doc);
   if (!ins.ok) { toast(t('import.bad')); return; }
   if (ins.chain.length) toast(t('import.chain', { n: ins.chain.length }));
   const existing = await device.get(doc.walletId);
   if (existing) {
-    // Same wallet already here: unlock the local copy and merge.
     await unlockDialog(doc.walletId, existing.extensions?.label);
     if (wallet && wallet.id === doc.walletId) {
       const r = await guard(() => wallet.merge(doc));
@@ -201,119 +258,103 @@ async function importDialog() {
   if (wallet && wallet.id === doc.walletId) { await wallet.save(); toast(t('import.saved')); render(); }
 }
 
-// ---- value words (SPEC 7 feeling check) ----
-
-function goalsForValue() {
-  return wallet.list('goal').map((g) => ({ id: g.rootId, S: g.body.S, N: g.body.N ?? g.body.S, status: g.body.status, title: g.body.title, unit: g.body.unit || '' }));
-}
-
-function valueSentence(contributions) {
-  const goals = goalsForValue();
-  const { v, parts } = V.comparableValue(goals, contributions);
-  if (!parts.length) return { v, text: t('val.none') };
-  const byId = Object.fromEntries(goals.map((g) => [g.id, g]));
-  const main = parts.reduce((m, p) => (Math.abs(p.wk) > Math.abs(m.wk) ? p : m));
-  const g = byId[main.goalId];
-  const text = (v < 0 ? t('val.harm', { k: fmtPct(-main.k), goal: g.title, w: fmtPct(main.w), v: fmtPct(-v) }) : t('val.moved', { k: fmtPct(main.k), goal: g.title, w: fmtPct(main.w), v: fmtPct(v) }));
-  return { v, text };
-}
-
-function rankWords(v) {
-  const since = Date.now() - 30 * 86400000;
-  const recent = currentAssessments().filter((a) => Date.parse(a.createdAt) >= since && typeof a.body.v === 'number');
-  const better = recent.filter((a) => a.body.v > v).length;
-  if (recent.length < 3) return '';
-  if (better < 3) return t('val.top3');
-  return t('val.rank', { n: better + 1, of: recent.length });
-}
-
-function currentAssessments() { return wallet.list('assessment'); }
-
 // ---- tabs ----
 
-const TABS = ['exchanges', 'counterparties', 'goals', 'facts', 'settings'];
+const TABS = ['timeline', 'contacts', 'systems', 'analytics', 'inbox', 'settings'];
 
 function renderWallet() {
+  const inboxCount = events(true).filter((e) => e.body.status === 'suggested').length + wallet.list('message-in').filter((m) => m.body.state === 'new').length;
   const nav = h('nav', { class: 'vw-tabs', role: 'tablist' }, TABS.map((k) =>
-    h('button', { role: 'tab', 'aria-selected': String(tab === k), class: tab === k ? 'is-on' : '', onclick: () => { tab = k; render(); } }, t('tab.' + k))));
-  const body = { exchanges: tabExchanges, counterparties: tabCounterparties, goals: tabGoals, facts: tabFacts, settings: tabSettings }[tab]();
+    h('button', { role: 'tab', 'aria-selected': String(tab === k), class: tab === k ? 'is-on' : '', onclick: () => { tab = k; render(); } },
+      t('tab.' + k), k === 'inbox' && inboxCount ? h('span', { class: 'vw-badge' }, String(inboxCount)) : null)));
+  const body = { timeline: tabTimeline, contacts: tabContacts, systems: tabSystems, analytics: tabAnalytics, inbox: tabInbox, settings: tabSettings }[tab]();
   return h('div', {}, nav, h('section', { class: 'vw-panel', role: 'tabpanel' }, body));
 }
 
-function cpName(rootId) {
-  const c = wallet.get(rootId);
-  return c ? c.body.name : t('cp.unknown');
-}
+// ---- timeline ----
 
-function typeName(rootId) {
-  const x = rootId && wallet.get(rootId);
-  return x ? x.body.name : '';
-}
-
-function elementLine(el) {
-  const q = el.quantity != null ? ` (${el.quantity}${el.unit ? ' ' + el.unit : ''})` : '';
-  const ty = typeName(el.typeId);
-  return el.label + q + (ty ? ' · ' + ty : '');
-}
-
-// Exchanges
-
-function tabExchanges() {
-  const exs = wallet.list('exchange').sort((a, b) => String(b.body.occurredAt).localeCompare(String(a.body.occurredAt)));
-  const assess = currentAssessments();
-  const plans = wallet.list('plan');
-  const settings = wallet.settings();
-  const out = [h('div', { class: 'vw-toolbar' }, h('button', { class: 'vw-btn vw-primary', onclick: () => exchangeDialog() }, t('ex.add')))];
-
-  const due = assess.filter((a) => a.body.checkAfter && a.body.checkAfter <= today() && !assess.some((b) => b.body.exchangeId === a.body.exchangeId && b.firstAt > a.firstAt));
+function tabTimeline() {
+  const sel = (key, opts) => {
+    const s = select([['', t('f.all.' + key)], ...opts], filters[key]);
+    s.setAttribute('aria-label', t('f.' + key));
+    s.addEventListener('change', () => { filters[key] = s.value; render(); });
+    return s;
+  };
+  let evs = events().sort((a, b) => String(b.body.occurredAt).localeCompare(String(a.body.occurredAt)));
+  if (filters.system) evs = evs.filter((e) => (e.body.systemId || '') === filters.system);
+  if (filters.role) evs = evs.filter((e) => e.body.role === filters.role);
+  if (filters.contact) evs = evs.filter((e) => involves(e, wallet.get(filters.contact) || { rootId: filters.contact, body: {} }));
+  const as = assessments();
+  const due = as.filter((a) => a.body.checkAfter && a.body.checkAfter <= today() && !as.some((b) => b.body.eventId === a.body.eventId && b.firstAt > a.firstAt));
+  const out = [
+    h('div', { class: 'vw-toolbar' },
+      h('button', { class: 'vw-btn vw-primary', onclick: () => eventDialog() }, t('ev.add')),
+      h('button', { class: 'vw-btn', onclick: registryDialog }, t('ev.fromRegistry'))),
+    h('div', { class: 'vw-filters' },
+      sel('system', systems().map((s) => [s.rootId, s.body.title])),
+      sel('role', ['actor', 'affected', 'user', 'witness'].map((r) => [r, t('role.' + r)])),
+      sel('contact', contacts().filter((c) => c.body.type !== 'self').map((c) => [c.rootId, c.body.name]))),
+  ];
   if (due.length) {
-    out.push(h('div', { class: 'vw-card vw-due' }, h('strong', {}, t('ex.due')),
-      due.map((a) => h('div', { class: 'vw-row' }, h('span', {}, exTitle(wallet.get(a.body.exchangeId))),
-        h('button', { class: 'vw-btn', onclick: () => assessDialog(a.body.exchangeId, null, { phase: 'retro', elementRef: a.body.elementRef }) }, t('ex.compare'))))));
+    out.push(h('div', { class: 'vw-card vw-due' }, h('strong', {}, t('ev.due')),
+      due.map((a) => h('div', { class: 'vw-row' }, h('span', {}, phrase(wallet.get(a.body.eventId) || { body: {} })),
+        h('button', { class: 'vw-btn', onclick: () => assessDialog(a.body.eventId, null, { phase: 'retro' }) }, t('ev.compare'))))));
   }
-  if (!exs.length) out.push(h('p', { class: 'vw-empty' }, t('ex.empty')));
-  for (const ex of exs) {
-    const b = ex.body;
-    const myAss = assess.filter((a) => a.body.exchangeId === ex.rootId).sort((x, y) => x.firstAt.localeCompare(y.firstAt));
-    const myPlans = plans.filter((p) => p.body.exchangeId === ex.rootId);
-    out.push(h('article', { class: 'vw-card' },
-      h('div', { class: 'vw-row' }, h('h3', {}, exTitle(ex)), h('span', { class: 'vw-chip' }, t('status.' + b.status))),
-      b.received.length ? h('p', {}, h('span', { class: 'vw-muted' }, t('ex.received') + ': '), b.received.map(elementLine).join('; ')) : null,
-      b.given.length ? h('p', {}, h('span', { class: 'vw-muted' }, t('ex.given') + ': '), b.given.map(elementLine).join('; ')) : null,
-      myPlans.map((p) => h('p', { class: 'vw-plan' }, t('plan.line', { who: cpName(p.body.authorCounterpartyId), promise: p.body.promise }), ' ',
-        h('span', { class: 'vw-muted' }, t('plan.counted', { f: fmtPct(V.planFactor(settings, { counterpartyId: p.body.authorCounterpartyId })) })))),
-      myAss.length ? h('div', { class: 'vw-phases' }, ['expected', 'received', 'retro'].map((ph) => {
-        const a = myAss.filter((x) => x.body.phase === ph).pop();
-        return h('div', { class: 'vw-phase' }, h('div', { class: 'vw-muted' }, t('phase.' + ph)), a ? assessmentView(a) : h('span', { class: 'vw-muted' }, '-'));
-      })) : null,
-      h('div', { class: 'vw-actions' },
-        h('button', { class: 'vw-btn', onclick: () => assessDialog(ex.rootId) }, t('ex.assess')),
-        h('button', { class: 'vw-btn', onclick: () => planDialog(ex.rootId) }, t('ex.plan')),
-        h('button', { class: 'vw-btn vw-ghost', onclick: () => exchangeDialog(ex) }, t('edit')),
-        itemMenu(ex))));
+  if (!evs.length) out.push(h('p', { class: 'vw-empty' }, t('ev.empty')));
+  let lastDay = '';
+  for (const ev of evs) {
+    const day = String(ev.body.occurredAt).slice(0, 10);
+    if (day !== lastDay) { out.push(h('h3', { class: 'vw-day' }, day)); lastDay = day; }
+    out.push(eventCard(ev, as));
   }
   return out;
 }
 
-function exTitle(ex) {
-  if (!ex) return '';
-  return `${cpName(ex.body.counterpartyId)} · ${String(ex.body.occurredAt).slice(0, 10)}${ex.body.approx ? ' ~' : ''}`;
+function eventCard(ev, as) {
+  const b = ev.body;
+  const mine = as.filter((a) => a.body.eventId === ev.rootId).sort((x, y) => x.firstAt.localeCompare(y.firstAt));
+  const plans = wallet.list('plan').filter((p) => p.body.eventId === ev.rootId);
+  const s = wallet.settings();
+  const realized = mine.filter((a) => a.body.phase === 'realized').pop();
+  const retro = mine.filter((a) => a.body.phase === 'retro').pop();
+  const latest = retro || realized;
+  const eff = latest && latest.body.spentV > 0 ? latest.body.v / latest.body.spentV : null;
+  const target = shareTarget(ev);
+  return h('article', { class: 'vw-card' },
+    h('div', { class: 'vw-row' }, h('h3', {}, phrase(ev)),
+      h('span', { class: 'vw-chips' }, h('span', { class: 'vw-chip' }, t('role.' + b.role)), b.systemId ? h('span', { class: 'vw-chip vw-chip-sys' }, sysTitle(b.systemId)) : null,
+        b.registryRef ? h('span', { class: 'vw-chip' }, t('ev.fromReg')) : null)),
+    h('div', { class: 'vw-phases' },
+      h('div', { class: 'vw-phase' }, h('div', { class: 'vw-muted' }, t('phase.plan')),
+        plans.length ? plans.map((p) => h('div', { class: 'vw-plan' }, `${p.body.author === selfId() ? t('plan.mine') : nameOf(p.body.author)}: ${p.body.promise}`,
+          h('div', { class: 'vw-muted vw-small' }, t('plan.counted', { f: pct(V.planFactor(s, { contactId: p.body.author, systemId: b.systemId })) })))) : h('span', { class: 'vw-muted' }, '-')),
+      h('div', { class: 'vw-phase' }, h('div', { class: 'vw-muted' }, t('phase.realized')), realized ? assessmentView(realized) : h('span', { class: 'vw-muted' }, '-')),
+      h('div', { class: 'vw-phase' }, h('div', { class: 'vw-muted' }, t('phase.retro')), retro ? assessmentView(retro) : h('span', { class: 'vw-muted' }, realized ? '-' : t('phase.retroAfter')))),
+    eff !== null ? h('p', { class: 'vw-muted vw-small' }, t('ev.efficiency', { e: num(eff), net: pct(latest.body.v - latest.body.spentV) })) : null,
+    h('div', { class: 'vw-actions' },
+      h('button', { class: 'vw-btn', onclick: () => assessDialog(ev.rootId, null, { phase: realized ? 'retro' : 'realized' }) }, t(realized ? 'ev.assessLater' : 'ev.assess')),
+      h('button', { class: 'vw-btn', onclick: () => planDialog(ev.rootId) }, t('ev.plan')),
+      latest && target ? h('button', { class: 'vw-btn', onclick: () => shareDialog(ev, latest, target) }, t('ev.share', { name: nameOf(target) })) : null,
+      h('button', { class: 'vw-btn vw-ghost', onclick: () => eventDialog(ev) }, t('edit')),
+      itemMenu(ev)));
 }
 
 function assessmentView(a) {
   const b = a.body;
   return h('div', { class: 'vw-assess' },
-    typeof b.v === 'number' && (b.contributions || []).length ? h('div', { class: b.v < 0 ? 'vw-v vw-neg' : 'vw-v' }, t(b.v < 0 ? 'val.short.harm' : 'val.short', { v: fmtPct(Math.abs(b.v)) })) : null,
-    b.ownScore ? h('div', { class: 'vw-muted' }, t('as.own', { v: b.ownScore.value.toLocaleString(lang), u: b.ownScore.unit || '' })) : null,
+    typeof b.v === 'number' && (b.contributions || []).length ? h('div', { class: b.v < 0 ? 'vw-v vw-neg' : 'vw-v' }, t(b.v < 0 ? 'val.short.harm' : 'val.short', { v: pct(Math.abs(b.v)) })) : null,
+    b.spentV > 0 ? h('div', { class: 'vw-muted vw-small' }, t('val.spentShort', { v: pct(b.spentV) })) : null,
+    b.ownScore ? h('div', { class: 'vw-muted vw-small' }, t('as.ownShow', { v: b.ownScore.value.toLocaleString(lang), u: b.ownScore.unit || '' })) : null,
+    b.reference ? h('div', { class: 'vw-chip' }, t('as.isReference')) : null,
     (b.gained || []).map((x) => h('div', { class: 'vw-gained' }, '+ ' + x)),
     (b.lost || []).map((x) => h('div', { class: 'vw-lost' }, '- ' + x)),
-    h('button', { class: 'vw-link', onclick: () => assessDialog(b.exchangeId, a) }, t('edit')));
+    h('button', { class: 'vw-link', onclick: () => assessDialog(b.eventId, a) }, t('edit')));
 }
 
-function itemMenu(item, after) {
+function itemMenu(item) {
   return h('span', { class: 'vw-menu' },
     item.versions > 1 ? h('button', { class: 'vw-btn vw-ghost', onclick: () => historyDialog(item.rootId) }, t('history', { n: item.versions })) : null,
-    h('button', { class: 'vw-btn vw-ghost', onclick: async () => { if (confirm(t('withdraw.confirm'))) { await guard(() => wallet.withdraw(item.rootId)); after && after(); render(); } } }, t('withdraw')),
+    h('button', { class: 'vw-btn vw-ghost', onclick: async () => { if (confirm(t('withdraw.confirm'))) { await guard(() => wallet.withdraw(item.rootId)); render(); } } }, t('withdraw')),
     h('button', { class: 'vw-btn vw-ghost vw-danger', onclick: async () => { if (confirm(t('erase.confirm'))) { await guard(() => wallet.eraseItem(item.rootId)); toast(t('erase.done')); render(); } } }, t('erase')));
 }
 
@@ -323,7 +364,7 @@ function historyDialog(rootId) {
       v.payload ? h('pre', {}, JSON.stringify(v.payload.body, null, 1)) : null))));
 }
 
-function elementRows(list, types) {
+function objectRows(list, types) {
   const wrap = h('div', { class: 'vw-elements' });
   const addRow = (el = {}) => {
     const row = h('div', { class: 'vw-element' },
@@ -335,164 +376,283 @@ function elementRows(list, types) {
     wrap.insertBefore(row, wrap.lastChild);
   };
   wrap.append(h('button', { type: 'button', class: 'vw-link', onclick: () => addRow() }, t('el.add')));
-  (list.length ? list : []).forEach(addRow);
+  list.forEach(addRow);
   return { node: wrap, add: addRow, read: () => [...wrap.querySelectorAll('.vw-element')].map((r) => {
     const label = r.querySelector('.el-label').value.trim();
     if (!label) return null;
-    const q = r.querySelector('.el-q').value;
     const o = { label };
-    if (q !== '') o.quantity = Number(q);
+    const q = r.querySelector('.el-q').value; if (q !== '') o.quantity = Number(q);
     const u = r.querySelector('.el-u').value.trim(); if (u) o.unit = u;
     const ty = r.querySelector('select').value; if (ty) o.typeId = ty;
     return o;
   }).filter(Boolean) };
 }
 
-function exchangeDialog(ex) {
-  const b = ex ? ex.body : { given: [], received: [], occurredAt: today(), status: 'recorded' };
-  return modal(t(ex ? 'ex.editTitle' : 'ex.addTitle'), (close) => {
-    const cps = wallet.list('counterparty');
-    const types = wallet.list('element-type');
-    const cp = select([...cps.map((c) => [c.rootId, `${c.body.name} (${t('cpt.' + c.body.type)})`]), ['__new', t('cp.new')]], b.counterpartyId || (cps.find((c) => c.body.type !== 'self') || cps[0])?.rootId);
-    const newType = select(['person', 'organization', 'state', 'group', 'unknown'].map((k) => [k, t('cpt.' + k)]), 'person');
-    const newName = h('input', { type: 'text', maxlength: 300 });
-    const newBox = h('div', { class: 'vw-inline', hidden: cp.value !== '__new' }, newType, newName);
-    cp.addEventListener('change', () => { newBox.hidden = cp.value !== '__new'; });
+function contactPicker(selected = [], { exclude = [] } = {}) {
+  const box = h('div', { class: 'vw-picks' });
+  for (const c of contacts().filter((x) => !exclude.includes(x.rootId))) {
+    box.append(h('label', { class: 'vw-check vw-pick' }, h('input', { type: 'checkbox', value: c.rootId, checked: selected.includes(c.rootId) }), h('span', {}, c.body.type === 'self' ? t('me.obj') : c.body.name)));
+  }
+  return { node: box, read: () => [...box.querySelectorAll('input:checked')].map((x) => x.value) };
+}
+
+function eventDialog(ev, preset = {}) {
+  const me = selfId();
+  const b = ev ? ev.body : { role: 'affected', actor: '', action: '', objects: [], affected: [me], occurredAt: today(), status: 'confirmed', ...preset };
+  return modal(t(ev ? 'ev.editTitle' : 'ev.addTitle'), (close) => {
+    const pastActions = [...new Set(events(true).map((e) => e.body.action))].slice(0, 50);
+    const dl = h('datalist', { id: 'vw-actions' }, pastActions.map((a) => h('option', { value: a })));
+    const roleBox = h('div', { class: 'vw-roles', role: 'radiogroup', 'aria-label': t('ev.role') },
+      ['actor', 'affected', 'user', 'witness'].map((r) => h('label', { class: 'vw-radio' }, h('input', { type: 'radio', name: 'role', value: r, checked: b.role === r }), h('span', {}, t('roleQ.' + r)))));
+    const others = contacts().filter((c) => c.rootId !== me);
+    const actor = select([[me, t('me.subj')], ...others.map((c) => [c.rootId, c.body.name]), ['__new', t('cp.new')]], b.actor || (others[0]?.rootId ?? '__new'));
+    const newType = select(['person', 'organization', 'state', 'group', 'device', 'unknown'].map((k) => [k, t('cpt.' + k)]), 'person');
+    const newName = h('input', { type: 'text', maxlength: 300, placeholder: t('cp.name') });
+    const newBox = h('div', { class: 'vw-inline', hidden: actor.value !== '__new' }, newType, newName);
+    actor.addEventListener('change', () => { newBox.hidden = actor.value !== '__new'; });
+    const action = h('input', { type: 'text', maxlength: 300, list: 'vw-actions', value: b.action, placeholder: t('ev.actionPh') });
+    const objs = objectRows(b.objects || [], wallet.list('element-type'));
+    if (!ev && !(b.objects || []).length) objs.add();
+    const aff = contactPicker(b.affected || []);
+    const sys = select([['', t('sys.none')], ...systems().filter((s) => s.body.status === 'active').map((s) => [s.rootId, s.body.title])], b.systemId || '');
     const date = h('input', { type: 'date', value: String(b.occurredAt).slice(0, 10) });
     const approx = h('input', { type: 'checkbox', checked: !!b.approx });
-    const rec = elementRows(b.received, types);
-    const giv = elementRows(b.given, types);
-    if (!ex) rec.add();
+    const syncRole = () => {
+      const role = roleBox.querySelector('input:checked').value;
+      if (role === 'actor' || role === 'user') { actor.value = me; actor.disabled = true; } else actor.disabled = false;
+      newBox.hidden = actor.value !== '__new';
+      const meBox = aff.node.querySelector(`input[value="${me}"]`);
+      if (meBox) meBox.checked = role === 'affected' ? true : (role === 'actor' || role === 'user' ? false : meBox.checked);
+    };
+    roleBox.addEventListener('change', syncRole);
+    actor.addEventListener('change', () => {
+      const last = events(true).filter((e) => e.body.actor === actor.value && e.body.systemId).pop();
+      if (last && !sys.value) sys.value = last.body.systemId;
+    });
+    setTimeout(syncRole, 0);
     const msg = h('p', { class: 'vw-error', role: 'alert' });
     return h('form', { onsubmit: async (e) => {
       e.preventDefault();
-      let cpId = cp.value;
-      const received = rec.read(), given = giv.read();
-      if (!received.length && !given.length) { msg.textContent = t('ex.needOne'); return; }
-      if (cpId === '__new') {
+      const role = roleBox.querySelector('input:checked').value;
+      if (!action.value.trim()) { msg.textContent = t('ev.needAction'); return; }
+      let actorId = actor.value;
+      if (actorId === '__new') {
         if (!newName.value.trim()) { msg.textContent = t('cp.needName'); return; }
-        cpId = await wallet.add('counterparty', { type: newType.value, name: newName.value.trim() });
+        actorId = await wallet.add('contact', { type: newType.value, name: newName.value.trim() });
       }
-      const body = { counterpartyId: cpId, given, received, occurredAt: date.value || today(), status: b.status || 'recorded' };
+      const body = { actor: actorId, action: action.value.trim(), objects: objs.read(), affected: aff.read(), role, occurredAt: date.value || today(), status: 'confirmed', stamps: b.stamps || [], rulings: b.rulings || [] };
+      if (b.actionType) body.actionType = b.actionType;
+      if (sys.value) body.systemId = sys.value;
       if (approx.checked) body.approx = true;
-      await guard(() => (ex ? wallet.correct(ex.rootId, body) : wallet.add('exchange', body)));
-      close(true); render();
+      if (b.registryRef) body.registryRef = b.registryRef;
+      const id = await guard(() => (ev ? wallet.correct(ev.rootId, body) : wallet.add('event', body, b.registryRef ? { source: 'registry' } : {})));
+      close(id); render();
     } },
-    field(t('ex.with'), cp), newBox,
-    h('div', { class: 'vw-inline' }, field(t('ex.when'), date), h('label', { class: 'vw-check' }, approx, h('span', {}, t('ex.approx')))),
-    h('fieldset', {}, h('legend', {}, t('ex.received')), rec.node),
-    h('fieldset', {}, h('legend', {}, t('ex.given')), giv.node),
-    msg, h('div', { class: 'vw-actions' }, h('button', { class: 'vw-btn vw-primary', type: 'submit' }, t('save'))));
+    dl, h('fieldset', {}, h('legend', {}, t('ev.role')), roleBox),
+    h('div', { class: 'vw-sentence' },
+      field(t('ev.who'), actor), newBox,
+      field(t('ev.did'), action, t('ev.didHint')),
+      h('fieldset', {}, h('legend', {}, t('ev.what')), objs.node),
+      h('fieldset', {}, h('legend', {}, t('ev.whom')), aff.node)),
+    h('div', { class: 'vw-inline' }, field(t('ev.system'), sys), field(t('ev.when'), date), h('label', { class: 'vw-check' }, approx, h('span', {}, t('ev.approx')))),
+    msg, submitRow());
   });
 }
 
-function planDialog(exRootId, plan) {
-  const ex = wallet.get(exRootId);
+// ---- registry ----
+
+async function registryDialog() {
+  const doc = await pickFile();
+  if (!doc) return;
+  const reg = doc.registry;
+  if (!reg || reg.type !== 'aevri.vledger.registry') { toast(t('reg.bad')); return; }
+  const ok = await C.verify(C.keyOfAddress(reg.owner.card.address), C.te.encode(C.canon(reg)), doc.sig) && await C.verifyCard(reg.owner);
+  if (!ok) { toast(t('reg.badSig')); return; }
+  await modal(t('reg.title', { name: reg.owner.card.name || short(reg.owner.card.address) }), (close) => h('div', {},
+    h('p', { class: 'vw-hint' }, t('reg.hint')),
+    reg.items.map((it) => h('div', { class: 'vw-card' },
+      h('div', { class: 'vw-row' }, h('strong', {}, it.title), h('span', { class: 'vw-chip' }, t('reg.kind.' + it.kind))),
+      it.plan ? h('p', { class: 'vw-plan' }, t('reg.promise', { p: it.plan.promise })) : null,
+      it.affects ? h('p', { class: 'vw-muted' }, it.affects) : null,
+      h('div', { class: 'vw-actions' }, h('button', { class: 'vw-btn vw-primary', onclick: async () => { close(true); await addFromRegistry(doc, it); } }, t(it.kind === 'object' ? 'reg.use' : 'reg.affected')))))));
+}
+
+async function addFromRegistry(doc, it) {
+  const reg = doc.registry;
+  const owner = await guard(() => wallet.addCard(reg.owner));
+  if (!owner) return;
+  if (!wallet.list('import').some((i) => i.body.originId === reg.registryUrl)) {
+    await wallet.add('import', { origin: 'file', originId: reg.registryUrl, payload: doc, payloadHash: await C.hashJson(doc) }, { source: 'registry' });
+  }
+  const rs = reg.systems.find((s) => s.systemId === it.system);
+  let sys = systems().find((s) => s.body.registryUrl === reg.registryUrl);
+  const sysId = sys ? sys.rootId : await wallet.add('value-system', { title: rs?.title || it.system, W: 1, status: 'active', registryUrl: reg.registryUrl, note: t('reg.sysNote') });
+  const ref = { registryUrl: reg.registryUrl, itemId: it.itemId, owner: reg.owner.card.address };
+  const me = selfId();
+  const preset = it.kind === 'object'
+    ? { role: 'user', actor: me, action: (it.actions || [])[0] || t('reg.defaultAction'), objects: [{ label: it.title }], affected: [], systemId: sysId, registryRef: ref }
+    : { role: 'affected', actor: owner, action: it.title, actionType: 'registry-event', objects: [], affected: [me], systemId: sysId, registryRef: ref, occurredAt: it.occurredAt || today() };
+  const evId = await eventDialog(null, preset);
+  if (evId && it.plan) {
+    await wallet.add('plan', { eventId: evId, ...(it.kind === 'object' ? { objectIndex: 0 } : {}), author: owner, promise: it.plan.promise, ...(typeof it.plan.plannedV === 'number' ? { plannedV: it.plan.plannedV } : {}), registryRef: ref }, { source: 'registry' });
+    render();
+  }
+}
+
+// ---- plan ----
+
+function planDialog(evRootId, plan) {
+  const ev = wallet.get(evRootId);
   const p = plan ? plan.body : {};
   return modal(t('plan.title'), (close) => {
-    const opts = elementOptions(ex);
-    const el = select(opts.map((o) => [o.key, o.label]), p.elementRef ? refKey(p.elementRef) : opts[0]?.key);
+    const me = selfId();
+    const author = select(contacts().map((c) => [c.rootId, c.rootId === me ? t('plan.mineLong') : c.body.name]), p.author || (ev.body.actor !== me ? ev.body.actor : me));
     const promise = h('textarea', { rows: 3, maxlength: 2000 }, p.promise || '');
     const msg = h('p', { class: 'vw-error', role: 'alert' });
     return h('form', { onsubmit: async (e) => {
       e.preventDefault();
       if (!promise.value.trim()) { msg.textContent = t('plan.need'); return; }
-      const body = { exchangeId: exRootId, elementRef: keyRef(exRootId, el.value), authorCounterpartyId: ex.body.counterpartyId, promise: promise.value.trim() };
+      const body = { eventId: evRootId, author: author.value, promise: promise.value.trim() };
       await guard(() => (plan ? wallet.correct(plan.rootId, body) : wallet.add('plan', body)));
       close(true); render();
-    } },
-    h('p', { class: 'vw-hint' }, t('plan.hint', { who: cpName(ex.body.counterpartyId) })),
-    field(t('plan.element'), el), field(t('plan.promise'), promise), msg,
-    h('div', { class: 'vw-actions' }, h('button', { class: 'vw-btn vw-primary', type: 'submit' }, t('save'))));
+    } }, h('p', { class: 'vw-hint' }, t('plan.hint')), field(t('plan.author'), author), field(t('plan.promise'), promise), msg, submitRow());
   });
 }
 
-function elementOptions(ex) {
-  return [...ex.body.received.map((e, i) => ({ key: 'received:' + i, label: t('ex.received') + ': ' + e.label })),
-    ...ex.body.given.map((e, i) => ({ key: 'given:' + i, label: t('ex.given') + ': ' + e.label }))];
-}
-const refKey = (r) => `${r.side}:${r.index}`;
-const keyRef = (exId, k) => { const [side, index] = k.split(':'); return { exchangeId: exId, side, index: Number(index) }; };
+// ---- assessment ----
 
-function assessDialog(exRootId, existing, preset = {}) {
-  const ex = wallet.get(exRootId);
-  if (!ex) return null;
-  const b = existing ? existing.body : { phase: preset.phase || 'received', confidence: 'medium', contributions: [], elementRef: preset.elementRef };
-  const goals = wallet.list('goal').filter((g) => g.body.status === 'active');
-  const hasPlan = wallet.list('plan').some((p) => p.body.exchangeId === exRootId);
-  return modal(t('as.title', { ex: exTitle(ex) }), (close) => {
-    const opts = elementOptions(ex);
-    const el = select(opts.map((o) => [o.key, o.label]), b.elementRef ? refKey(b.elementRef) : opts[0]?.key);
-    const phase = select(['expected', 'received', 'retro'].map((k) => [k, t('phase.' + k)]), b.phase);
-    const gained = h('textarea', { rows: 2, placeholder: t('as.gainedPh') }, (b.gained || []).join('\n'));
-    const lost = h('textarea', { rows: 2, placeholder: t('as.lostPh') }, (b.lost || []).join('\n'));
+function goalOptions() {
+  const sys = Object.fromEntries(systems().map((s) => [s.rootId, s.body.title]));
+  return wallet.list('goal').filter((g) => g.body.status === 'active').map((g) => [g.rootId, (g.body.systemId && sys[g.body.systemId] ? sys[g.body.systemId] + ' · ' : '') + g.body.title]);
+}
+
+function contribRows(list, onChange, defaultGoal) {
+  const box = h('div', { class: 'vw-contribs' });
+  const opts = goalOptions();
+  const add = (c = {}) => {
+    const g = select(opts, c.goalId || defaultGoal);
+    const mode = select([['pct', t('as.inPct')], ['amount', t('as.inUnits')]], 'c' in c ? 'amount' : 'pct');
+    mode.classList.add('c-mode');
+    const amt = h('input', { type: 'number', step: 'any', value: 'c' in c ? c.c : (c.k != null ? c.k * 100 : ''), 'aria-label': t('as.amount') });
+    const row = h('div', { class: 'vw-contrib' }, g, amt, mode, h('button', { type: 'button', class: 'vw-icon', 'aria-label': t('remove'), onclick: () => { row.remove(); onChange(); } }, '×'));
+    [g, amt, mode].forEach((x) => x.addEventListener('input', onChange));
+    box.append(row);
+  };
+  list.forEach(add);
+  return { node: box, add, read: () => [...box.querySelectorAll('.vw-contrib')].map((r) => {
+    const goalId = r.querySelector('select').value, amount = r.querySelector('input').value, m = r.querySelector('.c-mode').value;
+    if (!goalId || amount === '') return null;
+    return m === 'pct' ? { goalId, k: Number(amount) / 100 } : { goalId, c: Number(amount) };
+  }).filter(Boolean) };
+}
+
+function orientation(systemId, eventId) {
+  const refs = referencesFor(systemId, eventId);
+  const w = V.goalWeights(goalsForValue(), systemsForValue());
+  const goals = wallet.list('goal').filter((g) => g.body.status === 'active' && (systemId ? g.body.systemId === systemId : true));
+  return h('aside', { class: 'vw-orient' },
+    h('h3', {}, t('or.title', { sys: sysTitle(systemId) })),
+    h('div', { class: 'vw-label' }, t('or.refs')),
+    refs.length ? h('ul', {}, refs.map((r) => h('li', {}, `${r.phrase}: ${t('val.short', { v: pct(r.v) })}`, r.public ? h('span', { class: 'vw-muted' }, ' · ' + t('or.public')) : null))) : h('p', { class: 'vw-muted' }, t('or.noRefs')),
+    h('div', { class: 'vw-label' }, t('or.goals')),
+    goals.length ? h('ul', {}, goals.map((g) => h('li', {}, `${g.body.title}: ${t('or.goalLine', { w: pct(w[g.rootId] || 0), k: pct(goalProgress(g.rootId)) })}`))) : h('p', { class: 'vw-muted' }, t('or.noGoals')));
+}
+
+function assessDialog(evRootId, existing, preset = {}) {
+  const ev = wallet.get(evRootId);
+  if (!ev) return null;
+  const all = assessments().map((a) => a.body);
+  const canRetro = V.retroAllowed(all, evRootId, null) || V.retroAllowed(all, evRootId, 0);
+  const b = existing ? existing.body : { phase: preset.phase && (preset.phase !== 'retro' || canRetro) ? preset.phase : 'realized', confidence: 'medium', contributions: [], spent: [], reference: false };
+  const hasPlan = wallet.list('plan').some((p) => p.body.eventId === evRootId);
+  const sysGoal = wallet.list('goal').find((g) => g.body.status === 'active' && g.body.systemId === ev.body.systemId)?.rootId;
+  return modal(t('as.title', { ev: phrase(ev) }), (close) => {
+    const phaseOpts = [['realized', t('phase.realized')]];
+    if (canRetro || b.phase === 'retro') phaseOpts.push(['retro', t('phase.retro')]);
+    const phaseSel = select(phaseOpts, b.phase);
+    const gained = h('textarea', { rows: 2, placeholder: t('as.linesPh') }, (b.gained || []).join('\n'));
+    const lost = h('textarea', { rows: 2, placeholder: t('as.linesPh') }, (b.lost || []).join('\n'));
+    const preview = h('p', { class: 'vw-preview', 'aria-live': 'polite' });
+    const refresh = () => {
+      const r = valueOf(contribs.read(), spent.read());
+      preview.textContent = valueWords(r, ev.body.systemId, evRootId);
+    };
+    const contribs = contribRows(b.contributions || [], refresh, sysGoal);
+    const spent = contribRows(b.spent || [], refresh, undefined);
+    if (!(b.contributions || []).length && goalOptions().length) contribs.add();
     const own = h('input', { type: 'number', step: 'any', value: b.ownScore?.value ?? '' });
     const ownU = h('input', { type: 'text', maxlength: 40, placeholder: t('as.unitPh'), value: b.ownScore?.unit || '' });
     const conf = select(['low', 'medium', 'high'].map((k) => [k, t('conf.' + k)]), b.confidence);
     const reasons = h('textarea', { rows: 2, maxlength: 2000 }, b.reasons || '');
     const check = h('input', { type: 'date', value: b.checkAfter || '' });
-    const planCount = h('input', { type: 'range', min: 0, max: 1, step: 0.05, value: b.planCount ?? V.planFactor(wallet.settings(), { counterpartyId: ex.body.counterpartyId }) });
-    const planOut = h('output', {}, fmtPct(Number(planCount.value)));
-    planCount.addEventListener('input', () => { planOut.textContent = fmtPct(Number(planCount.value)); });
-    const preview = h('p', { class: 'vw-preview', 'aria-live': 'polite' });
-    const contribBox = h('div', { class: 'vw-contribs' });
-    const readContribs = () => [...contribBox.querySelectorAll('.vw-contrib')].map((r) => {
-      const goalId = r.querySelector('select').value;
-      const amount = r.querySelector('input').value;
-      const mode = r.querySelector('.c-mode').value;
-      if (!goalId || amount === '') return null;
-      return mode === 'pct' ? { goalId, k: Number(amount) / 100 } : { goalId, c: Number(amount) };
-    }).filter(Boolean);
-    const refresh = () => { preview.textContent = valueSentence(readContribs()).text; };
-    const addContrib = (c = {}) => {
-      const g = select(goals.map((x) => [x.rootId, x.body.title]), c.goalId);
-      const mode = select([['amount', t('as.inUnits')], ['pct', t('as.inPct')]], 'k' in c ? 'pct' : 'amount');
-      mode.classList.add('c-mode');
-      const amt = h('input', { type: 'number', step: 'any', value: 'k' in c ? c.k * 100 : (c.c ?? ''), 'aria-label': t('as.amount') });
-      const row = h('div', { class: 'vw-contrib' }, g, amt, mode, h('button', { type: 'button', class: 'vw-icon', 'aria-label': t('remove'), onclick: () => { row.remove(); refresh(); } }, '×'));
-      [g, amt, mode].forEach((x) => x.addEventListener('input', refresh));
-      contribBox.append(row);
-    };
-    (b.contributions || []).forEach(addContrib);
-    if (!(b.contributions || []).length && goals.length) addContrib();
+    const isRef = h('input', { type: 'checkbox', checked: !!b.reference });
+    const planCount = h('input', { type: 'range', min: 0, max: 1, step: 0.05, value: b.planCount ?? V.planFactor(wallet.settings(), { contactId: ev.body.actor, systemId: ev.body.systemId }) });
+    const planOut = h('output', {}, pct(Number(planCount.value)));
+    planCount.addEventListener('input', () => { planOut.textContent = pct(Number(planCount.value)); });
     refresh();
-    return h('form', { onsubmit: async (e) => {
-      e.preventDefault();
-      const contributions = readContribs();
-      const { v } = V.comparableValue(goalsForValue(), contributions);
-      const body = { exchangeId: exRootId, elementRef: el.value ? keyRef(exRootId, el.value) : undefined, phase: phase.value, gained: lines(gained.value), lost: lines(lost.value), contributions, confidence: conf.value };
-      if (contributions.length) body.v = v;
-      if (own.value !== '') body.ownScore = { value: Number(own.value), ...(ownU.value.trim() ? { unit: ownU.value.trim() } : {}) };
-      if (reasons.value.trim()) body.reasons = reasons.value.trim();
-      if (check.value) body.checkAfter = check.value;
-      if (hasPlan) body.planCount = Number(planCount.value);
-      if (!body.elementRef) delete body.elementRef;
-      const id = await guard(() => (existing ? wallet.correct(existing.rootId, body) : wallet.add('assessment', body)));
-      close(true); render();
-      if (id && contributions.length) feelingCheck(exRootId, wallet.rootOf(id), body);
-    } },
-    h('div', { class: 'vw-inline' }, field(t('as.element'), el), field(t('as.phase'), phase)),
-    field(t('as.gained'), gained, t('as.linesHint')), field(t('as.lost'), lost),
-    h('fieldset', {}, h('legend', {}, t('as.goals')),
-      goals.length ? [contribBox, h('button', { type: 'button', class: 'vw-link', onclick: () => { addContrib(); refresh(); } }, t('as.addGoal'))] : h('p', { class: 'vw-hint' }, t('as.noGoals')),
-      preview),
-    h('div', { class: 'vw-inline' }, field(t('as.own'), own, t('as.ownHint')), field(t('as.unit'), ownU)),
-    hasPlan ? field(t('as.planCount'), h('div', { class: 'vw-inline' }, planCount, planOut), t('as.planCountHint')) : null,
-    h('div', { class: 'vw-inline' }, field(t('as.conf'), conf), field(t('as.check'), check, t('as.checkHint'))),
-    field(t('as.reasons'), reasons),
-    h('div', { class: 'vw-actions' }, h('button', { class: 'vw-btn vw-primary', type: 'submit' }, t('save'))));
+    return h('div', { class: 'vw-assess-layout' },
+      orientation(ev.body.systemId, evRootId),
+      h('form', { onsubmit: async (e) => {
+        e.preventDefault();
+        const c = contribs.read(), sp = spent.read();
+        const r = valueOf(c, sp);
+        const body = { eventId: evRootId, phase: phaseSel.value, gained: lines(gained.value), lost: lines(lost.value), contributions: c, spent: sp, reference: isRef.checked, confidence: conf.value };
+        if (c.length) body.v = r.v;
+        if (sp.length) body.spentV = r.spentV;
+        if (own.value !== '') body.ownScore = { value: Number(own.value), ...(ownU.value.trim() ? { unit: ownU.value.trim() } : {}) };
+        if (reasons.value.trim()) body.reasons = reasons.value.trim();
+        if (check.value) body.checkAfter = check.value;
+        if (hasPlan) body.planCount = Number(planCount.value);
+        const id = await guard(() => (existing ? wallet.correct(existing.rootId, body) : wallet.add('assessment', body)));
+        close(true); render();
+        if (id && c.length) feelingCheck(evRootId, wallet.rootOf(id), body, r);
+      } },
+      field(t('as.phase'), phaseSel, canRetro ? null : t('as.retroHint')),
+      field(t('as.gained'), gained, t('as.linesHint')), field(t('as.lost'), lost),
+      h('fieldset', {}, h('legend', {}, t('as.goals')),
+        goalOptions().length ? [contribs.node, h('button', { type: 'button', class: 'vw-link', onclick: () => { contribs.add(); refresh(); } }, t('as.addGoal'))] : h('p', { class: 'vw-hint' }, t('as.noGoals'))),
+      h('fieldset', {}, h('legend', {}, t('as.spent')), h('p', { class: 'vw-hint' }, t('as.spentHint')),
+        spent.node, h('button', { type: 'button', class: 'vw-link', onclick: () => { spent.add(); refresh(); } }, t('as.addSpent'))),
+      preview,
+      h('div', { class: 'vw-inline' }, field(t('as.own'), own, t('as.ownHint')), field(t('as.unit'), ownU)),
+      hasPlan ? field(t('as.planCount'), h('div', { class: 'vw-inline' }, planCount, planOut), t('as.planCountHint')) : null,
+      h('div', { class: 'vw-inline' }, field(t('as.conf'), conf), field(t('as.check'), check, t('as.checkHint'))),
+      field(t('as.reasons'), reasons),
+      h('label', { class: 'vw-check' }, isRef, h('span', {}, t('as.reference'))),
+      submitRow()));
   });
 }
 
-async function feelingCheck(exRootId, assessRoot, body) {
-  const { text } = valueSentence(body.contributions);
-  const rank = body.v > 0 ? rankWords(body.v) : '';
+function valueWords(r, systemId, eventId) {
+  if (!r.parts.length) return t('val.none');
+  const goals = Object.fromEntries(goalsForValue().map((g) => [g.id, g]));
+  const main = r.parts.reduce((m, p) => (Math.abs(p.wk) > Math.abs(m.wk) ? p : m));
+  let s = t(r.v < 0 ? 'val.harm' : 'val.moved', { k: pct(Math.abs(main.k)), goal: goals[main.goalId]?.title || '', w: pct(main.w), v: pct(Math.abs(r.v)) });
+  if (r.spentV > 0) s += ' ' + t('val.spent', { s: pct(r.spentV), e: num(r.efficiency) });
+  const near = r.v > 0 ? V.nearestReference(referencesFor(systemId, eventId).filter((x) => x.v > 0), r.v) : null;
+  if (near) {
+    const key = near.ratio >= 1.25 ? 'val.ref' : near.ratio > 0.8 ? 'val.refSame' : 'val.refLess';
+    s += ' ' + t(key, { x: key === 'val.refLess' ? pct(near.ratio) : num(near.ratio), ref: near.phrase });
+  }
+  return s;
+}
+
+function rankWords(v) {
+  const since = Date.now() - 30 * 86400000;
+  const recent = assessments().filter((a) => Date.parse(a.createdAt) >= since && typeof a.body.v === 'number');
+  if (recent.length < 3) return '';
+  const better = recent.filter((a) => a.body.v > v).length;
+  return better < 3 ? t('val.top3') : t('val.rank', { n: better + 1, of: recent.length });
+}
+
+async function feelingCheck(evRootId, assessRoot, body, r) {
+  const ev = wallet.get(evRootId);
+  const text = valueWords(r, ev.body.systemId, evRootId) + (r.v > 0 ? ' ' + rankWords(r.v) : '');
   const goals = goalsForValue();
-  const hist = currentAssessments().map((a) => ({ at: a.createdAt, v: a.body.v, ownScore: a.body.ownScore, contributions: a.body.contributions || [] }));
+  const hist = assessments().map((a) => ({ at: a.createdAt, v: a.body.v, ownScore: a.body.ownScore, contributions: a.body.contributions || [] }));
   const flags = V.feelingChecks(goals, hist);
   const ans = await modal(t('fc.title'), (close) => h('div', {},
-    h('p', { class: 'vw-lead' }, text + (rank ? ' ' + rank : '')),
-    h('p', {}, t('fc.q')),
+    h('p', { class: 'vw-lead' }, text), h('p', {}, t('fc.q')),
     flags.map((f) => h('p', { class: 'vw-flag' }, t('flag.' + f.code, { goal: goals.find((g) => g.id === f.goalId)?.title || '' }))),
     h('div', { class: 'vw-actions' },
       h('button', { class: 'vw-btn vw-primary', onclick: () => close('yes') }, t('fc.yes')),
@@ -500,85 +660,216 @@ async function feelingCheck(exRootId, assessRoot, body) {
       h('button', { class: 'vw-btn', onclick: () => close('more') }, t('fc.more')))));
   if (ans === 'less' || ans === 'more') {
     toast(t(ans === 'less' ? 'fc.lessHint' : 'fc.moreHint'));
-    assessDialog(exRootId, wallet.get(assessRoot) && { ...wallet.get(assessRoot), rootId: assessRoot });
+    assessDialog(evRootId, { ...wallet.get(assessRoot), rootId: assessRoot });
   }
 }
 
-// Counterparties
+// ---- share (P2P message, delivered as a file in L1) ----
 
-function tabCounterparties() {
-  const cps = wallet.list('counterparty').filter((c) => c.body.type !== 'self');
-  const exs = wallet.list('exchange');
-  const out = [h('div', { class: 'vw-toolbar' }, h('button', { class: 'vw-btn vw-primary', onclick: () => cpDialog() }, t('cp.add')))];
-  if (!cps.length) out.push(h('p', { class: 'vw-empty' }, t('cp.empty')));
-  for (const type of ['person', 'organization', 'state', 'group', 'unknown']) {
-    const group = cps.filter((c) => c.body.type === type);
+function shareTarget(ev) {
+  const me = selfId();
+  if (ev.body.registryRef?.owner) return wallet.contactByAddress(ev.body.registryRef.owner)?.rootId || null;
+  if (ev.body.actor !== me) return ev.body.actor;
+  return (ev.body.affected || []).find((x) => x !== me) || null;
+}
+
+function shareDialog(ev, a, targetId) {
+  const c = wallet.get(targetId);
+  const card = c?.body.card?.card;
+  return modal(t('sh.title', { name: c?.body.name || '' }), (close) => {
+    if (!card) return h('div', {}, h('p', {}, t('sh.noCard', { name: c?.body.name || '' })), h('div', { class: 'vw-actions' }, h('button', { class: 'vw-btn', onclick: () => close(null) }, t('close'))));
+    const st = card.storage || {};
+    const publish = select([['no', t('sh.pub.no')], ...(st.publishes !== 'no' ? [['anonymous', t('sh.pub.anonymous')], ['named', t('sh.pub.named')]] : [])], 'no');
+    const anon = h('input', { type: 'checkbox' });
+    const plans = wallet.list('plan').filter((p) => p.body.eventId === ev.rootId);
+    return h('form', { onsubmit: async (e) => {
+      e.preventDefault();
+      const b = a.body;
+      const body = { kind: 'share', event: { actor: nameOf(ev.body.actor), action: ev.body.action, objects: (ev.body.objects || []).map((o) => o.label), affected: (ev.body.affected || []).map(objName), occurredAt: String(ev.body.occurredAt) }, phase: b.phase, gained: b.gained || [], lost: b.lost || [], publish: publish.value };
+      if (ev.body.registryRef) body.event.registryRef = ev.body.registryRef;
+      if (typeof b.v === 'number') body.v = b.v;
+      if (b.spentV) body.spentV = b.spentV;
+      if (ev.body.systemId) body.system = sysTitle(ev.body.systemId);
+      if (plans.length && typeof b.v === 'number') { const pv = plans[0].body.plannedV; if (typeof pv === 'number') body.planGap = b.v < 0 ? 'harm' : b.v > pv * 1.1 ? 'above-plan' : b.v < pv * 0.9 ? 'below-plan' : 'as-planned'; }
+      const msg = await guard(() => wallet.prepareShare(targetId, body, { about: a.rootId, anonymous: anon.checked }));
+      if (msg) { download(`share_${slug(c.body.name)}_${today()}.vwmsg.json`, msg); toast(t('sh.ready')); close(true); render(); }
+    } },
+    h('div', { class: 'vw-card vw-policy' }, h('strong', {}, t('sh.policy')),
+      h('p', {}, st.stores ? t('sh.stores', { p: st.purpose || '-', d: st.retentionDays ?? '-' }) : t('sh.notStores')),
+      h('p', {}, t('sh.publishes.' + (st.publishes || 'no')))),
+    field(t('sh.publish'), publish),
+    h('label', { class: 'vw-check' }, anon, h('span', {}, t('sh.anon'))),
+    h('p', { class: 'vw-hint' }, t('sh.delivery')),
+    submitRow(t('sh.go')));
+  });
+}
+
+// ---- contacts ----
+
+function tabContacts() {
+  const me = selfId();
+  const link = C.addressLink(wallet.address, { name: wallet.doc.extensions.label || undefined, kind: 'person' });
+  const qr = h('div', { class: 'vw-qr' });
+  qr.innerHTML = qrSvg(link, { label: t('ct.qrLabel') });
+  const s = wallet.settings();
+  const blocked = new Set(s.requests?.blockContacts || []);
+  const out = [
+    h('div', { class: 'vw-card vw-me' },
+      h('h2', {}, t('ct.myAddress')), qr,
+      h('code', { class: 'vw-addr' }, wallet.address),
+      h('div', { class: 'vw-actions' },
+        h('button', { class: 'vw-btn', onclick: async () => { try { await navigator.clipboard.writeText(link); toast(t('copied')); } catch { prompt(t('ct.copyManual'), link); } } }, t('ct.copyLink')),
+        h('button', { class: 'vw-btn', onclick: async () => download(`card_${slug(wallet.doc.extensions.label)}.vwcard.json`, await wallet.card()) }, t('ct.saveCard'))),
+      h('p', { class: 'vw-hint' }, t('ct.myHint'))),
+    h('div', { class: 'vw-toolbar' },
+      h('button', { class: 'vw-btn vw-primary', onclick: () => contactDialog() }, t('ct.add')),
+      h('button', { class: 'vw-btn', onclick: scanDialog }, t('ct.scan')),
+      h('button', { class: 'vw-btn', onclick: async () => { const d = await pickFile(); if (d?.card) { await guard(() => wallet.addCard(d)); toast(t('ct.cardAdded')); render(); } else if (d) toast(t('ct.notCard')); } }, t('ct.importCard'))),
+  ];
+  const list = contacts().filter((c) => c.rootId !== me);
+  if (!list.length) out.push(h('p', { class: 'vw-empty' }, t('ct.empty')));
+  for (const type of ['person', 'organization', 'state', 'group', 'device', 'unknown']) {
+    const group = list.filter((c) => c.body.type === type);
     if (!group.length) continue;
     out.push(h('h2', {}, t('cpt.' + type + '.many')));
     for (const c of group) {
-      const n = exs.filter((x) => x.body.counterpartyId === c.rootId).length;
-      out.push(h('article', { class: 'vw-card' }, h('div', { class: 'vw-row' }, h('h3', {}, c.body.name), h('span', { class: 'vw-muted' }, t('cp.exchanges', { n }))),
+      const n = events().filter((e) => involves(e, c)).length;
+      out.push(h('article', { class: 'vw-card' },
+        h('div', { class: 'vw-row' }, h('h3', {}, c.body.name), h('span', { class: 'vw-muted' }, t('ct.events', { n }))),
+        c.body.address ? h('p', { class: 'vw-muted vw-small' }, short(c.body.address), c.body.card ? ' · ' + t('ct.hasCard') : ' · ' + t('ct.noCard')) : h('p', { class: 'vw-muted vw-small' }, t('ct.noAddress')),
         c.body.note ? h('p', {}, c.body.note) : null,
-        c.body.profileUrl ? h('p', { class: 'vw-muted' }, c.body.profileUrl) : null,
-        h('div', { class: 'vw-actions' }, h('button', { class: 'vw-btn vw-ghost', onclick: () => cpDialog(c) }, t('edit')), itemMenu(c))));
+        h('div', { class: 'vw-actions' },
+          h('button', { class: 'vw-btn', onclick: () => eventDialog(null, { actor: c.rootId, role: 'affected', affected: [me] }) }, t('ct.newEvent')),
+          h('label', { class: 'vw-check vw-inline-check' }, h('input', { type: 'checkbox', checked: blocked.has(c.rootId), onchange: async (e) => {
+            const cur = wallet.settings();
+            const set = new Set(cur.requests?.blockContacts || []);
+            if (e.target.checked) set.add(c.rootId); else set.delete(c.rootId);
+            await guard(() => wallet.saveSettings({ ...cur, requests: { ...(cur.requests || {}), blockContacts: [...set] } }));
+          } }), h('span', {}, t('ct.blockRequests'))),
+          h('button', { class: 'vw-btn vw-ghost', onclick: () => contactDialog(c) }, t('edit')), itemMenu(c))));
     }
   }
   return out;
 }
 
-function cpDialog(c) {
-  const b = c ? c.body : { type: 'person' };
-  return modal(t(c ? 'cp.editTitle' : 'cp.addTitle'), (close) => {
-    const type = select(['person', 'organization', 'state', 'group', 'unknown'].map((k) => [k, t('cpt.' + k)]), b.type);
+function contactDialog(c, preset = {}) {
+  const b = c ? c.body : { type: 'person', ...preset };
+  return modal(t(c ? 'ct.editTitle' : 'ct.addTitle'), (close) => {
+    const type = select(['person', 'organization', 'state', 'group', 'device', 'unknown'].map((k) => [k, t('cpt.' + k)]), b.type);
     const name = h('input', { type: 'text', maxlength: 300, value: b.name || '' });
+    const addr = h('input', { type: 'text', value: b.address || '', placeholder: 'vw1:... ' + t('ct.orLink') });
     const note = h('textarea', { rows: 2, maxlength: 2000 }, b.note || '');
-    const url = h('input', { type: 'url', placeholder: 'https://', value: b.profileUrl || '' });
     const msg = h('p', { class: 'vw-error', role: 'alert' });
+    addr.addEventListener('change', () => {
+      const p = C.parseAddress(addr.value);
+      if (p) { addr.value = p.address; if (p.name && !name.value) name.value = p.name; if (p.kind && ['person', 'organization', 'state', 'group', 'device'].includes(p.kind)) type.value = p.kind; }
+    });
     return h('form', { onsubmit: async (e) => {
       e.preventDefault();
       if (!name.value.trim()) { msg.textContent = t('cp.needName'); return; }
-      if (url.value && !/^https:\/\//.test(url.value)) { msg.textContent = t('cp.badUrl'); return; }
-      const body = { type: type.value, name: name.value.trim() };
-      if (note.value.trim()) body.note = note.value.trim();
-      if (url.value) body.profileUrl = url.value;
-      await guard(() => (c ? wallet.correct(c.rootId, body) : wallet.add('counterparty', body)));
+      const body = { ...(c ? c.body : {}), type: type.value, name: name.value.trim() };
+      if (addr.value.trim()) {
+        const p = C.parseAddress(addr.value);
+        if (!p) { msg.textContent = t('ct.badAddress'); return; }
+        if (p.address === wallet.address) { msg.textContent = t('ct.isMe'); return; }
+        body.address = p.address;
+      } else delete body.address;
+      if (note.value.trim()) body.note = note.value.trim(); else delete body.note;
+      await guard(() => (c ? wallet.correct(c.rootId, body) : wallet.add('contact', body)));
       close(true); render();
-    } }, field(t('cp.type'), type), field(t('cp.name'), name), field(t('cp.note'), note), field(t('cp.url'), url, t('cp.urlHint')), msg,
-    h('div', { class: 'vw-actions' }, h('button', { class: 'vw-btn vw-primary', type: 'submit' }, t('save'))));
+    } }, field(t('cp.type'), type), field(t('cp.name'), name), field(t('ct.address'), addr, t('ct.addressHint')), field(t('cp.note'), note), msg, submitRow());
   });
 }
 
-// Goals
+async function scanDialog() {
+  if (!('BarcodeDetector' in window) || !navigator.mediaDevices?.getUserMedia) {
+    toast(t('ct.noScanner'));
+    return contactDialog();
+  }
+  let stream = null, stop = false;
+  const found = await modal(t('ct.scan'), (close) => {
+    const video = h('video', { class: 'vw-video', playsinline: true, muted: true });
+    const msg = h('p', { class: 'vw-hint' }, t('ct.scanHint'));
+    (async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        video.srcObject = stream; await video.play();
+        const det = new window.BarcodeDetector({ formats: ['qr_code'] });
+        while (!stop) {
+          const codes = await det.detect(video).catch(() => []);
+          const p = codes.map((x) => C.parseAddress(x.rawValue)).find(Boolean);
+          if (p) { close(p); break; }
+          await new Promise((r) => setTimeout(r, 250));
+        }
+      } catch { msg.textContent = t('ct.camError'); }
+    })();
+    return h('div', {}, video, msg);
+  });
+  stop = true;
+  if (stream) stream.getTracks().forEach((tr) => tr.stop());
+  if (found) contactDialog(null, { address: found.address, name: found.name || '', type: found.kind || 'person' });
+}
 
-function tabGoals() {
+// ---- systems, goals, facts ----
+
+function tabSystems() {
+  const om = V.systemWeights(systemsForValue(), goalsForValue());
+  const w = V.goalWeights(goalsForValue(), systemsForValue());
   const goals = wallet.list('goal');
-  const w = V.goalWeights(goalsForValue());
-  const assess = currentAssessments();
-  const out = [h('div', { class: 'vw-toolbar' }, h('button', { class: 'vw-btn vw-primary', onclick: () => goalDialog() }, t('goal.add')))];
-  out.push(h('p', { class: 'vw-hint' }, t('goal.lead')));
-  if (!goals.length) out.push(h('p', { class: 'vw-empty' }, t('goal.empty')));
-  for (const g of goals.sort((a, b) => b.body.S - a.body.S)) {
-    const N = g.body.N ?? g.body.S;
-    const k = assess.flatMap((a) => (a.body.contributions || []).filter((c) => c.goalId === g.rootId)).reduce((s, c) => s + V.progressShare({ S: g.body.S, N }, c), 0);
+  const out = [h('p', { class: 'vw-hint' }, t('sys.lead')),
+    h('div', { class: 'vw-toolbar' }, h('button', { class: 'vw-btn vw-primary', onclick: () => systemDialog() }, t('sys.add')), h('button', { class: 'vw-btn', onclick: () => goalDialog() }, t('goal.add')))];
+  const block = (title, sysItem, sysGoals, share) => h('section', { class: 'vw-card' },
+    h('div', { class: 'vw-row' }, h('h3', {}, title), h('span', { class: 'vw-chip' }, share != null ? t('sys.share', { w: pct(share) }) : t('gs.dropped'))),
+    sysItem?.body.registryUrl ? h('p', { class: 'vw-muted vw-small' }, t('sys.follows', { url: sysItem.body.registryUrl })) : null,
+    sysGoals.length ? sysGoals.map((g) => {
+      const k = goalProgress(g.rootId);
+      return h('div', { class: 'vw-goal' },
+        h('div', { class: 'vw-row' }, h('span', {}, g.body.title, ' ', h('span', { class: 'vw-muted vw-small' }, t('goal.wLine', { w: pct(w[g.rootId] || 0) }))), h('span', { class: 'vw-chip' }, t('gs.' + g.body.status))),
+        h('div', { class: 'vw-bar', role: 'meter', 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': Math.round(Math.max(0, Math.min(1, k)) * 100), 'aria-label': g.body.title }, h('span', { style: `width:${Math.max(0, Math.min(1, k)) * 100}%` })),
+        h('div', { class: 'vw-actions' }, h('span', { class: 'vw-muted vw-small' }, t('goal.progressText', { k: pct(k) })), h('button', { class: 'vw-btn vw-ghost', onclick: () => goalDialog(g) }, t('edit')), itemMenu(g)));
+    }) : h('p', { class: 'vw-muted' }, t('sys.noGoals')),
+    sysItem ? h('div', { class: 'vw-actions' }, h('button', { class: 'vw-btn vw-ghost', onclick: () => systemDialog(sysItem) }, t('edit')), itemMenu(sysItem)) : null);
+  for (const s of systems()) out.push(block(`${s.body.title} · W ${num(s.body.W)}`, s, goals.filter((g) => g.body.systemId === s.rootId), s.body.status === 'active' ? om[s.rootId] : null));
+  const known = new Set(systems().map((s) => s.rootId));
+  const loose = goals.filter((g) => !g.body.systemId || !known.has(g.body.systemId));
+  if (loose.length) out.push(block(t('sys.other'), null, loose, om[V.OTHER] ?? null));
+  out.push(h('h2', {}, t('tab.facts')), h('p', { class: 'vw-hint' }, t('fact.lead')), h('button', { class: 'vw-btn', onclick: () => factDialog() }, t('fact.add')));
+  for (const f of wallet.list('fact').sort((a, b) => b.createdAt.localeCompare(a.createdAt))) {
+    const gs = (f.body.goalIds || []).map((id) => wallet.get(id)?.body.title).filter(Boolean);
     out.push(h('article', { class: 'vw-card' },
-      h('div', { class: 'vw-row' }, h('h3', {}, g.body.title), h('span', { class: 'vw-chip' }, t('gs.' + g.body.status))),
-      g.body.why ? h('p', {}, g.body.why) : null,
-      h('p', { class: 'vw-muted' }, t('goal.numbers', { s: g.body.S.toLocaleString(lang) + (g.body.unit ? ' ' + g.body.unit : ''), n: N.toLocaleString(lang) + (g.body.unit ? ' ' + g.body.unit : ''), w: g.rootId in w ? fmtPct(w[g.rootId]) : '-' })),
-      h('div', { class: 'vw-bar', role: 'meter', 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': Math.round(Math.max(0, Math.min(1, k)) * 100), 'aria-label': t('goal.progress') },
-        h('span', { style: `width:${Math.max(0, Math.min(1, k)) * 100}%` })),
-      h('p', { class: 'vw-muted' }, t('goal.progressText', { k: fmtPct(k) })),
-      h('div', { class: 'vw-actions' }, h('button', { class: 'vw-btn vw-ghost', onclick: () => goalDialog(g) }, t('edit')), itemMenu(g))));
+      h('div', { class: 'vw-row' }, h('span', { class: 'vw-muted' }, f.body.topic || ''), h('span', { class: 'vw-chip' }, t('conf.' + f.body.certainty) + (f.body.exploring ? ' · ' + t('fact.exploring') : ''))),
+      h('p', {}, f.body.text), gs.length ? h('p', { class: 'vw-muted' }, t('fact.goals') + ': ' + gs.join(', ')) : null,
+      h('div', { class: 'vw-actions' }, h('button', { class: 'vw-btn vw-ghost', onclick: () => factDialog(f) }, t('fact.revise')), itemMenu(f))));
   }
   return out;
+}
+
+function systemDialog(s) {
+  const b = s ? s.body : { status: 'active', W: 1 };
+  return modal(t(s ? 'sys.editTitle' : 'sys.addTitle'), (close) => {
+    const title = h('input', { type: 'text', maxlength: 300, value: b.title || '', placeholder: t('sys.titlePh') });
+    const W = h('input', { type: 'number', step: 'any', min: 0, value: b.W });
+    const status = select(['active', 'dropped'].map((k) => [k, t('gs.' + k)]), b.status);
+    const note = h('textarea', { rows: 2, maxlength: 2000 }, b.note || '');
+    const msg = h('p', { class: 'vw-error', role: 'alert' });
+    return h('form', { onsubmit: async (e) => {
+      e.preventDefault();
+      if (!title.value.trim()) { msg.textContent = t('sys.needTitle'); return; }
+      if (!(Number(W.value) > 0)) { msg.textContent = t('sys.needW'); return; }
+      const body = { ...(s ? s.body : {}), title: title.value.trim(), W: Number(W.value), status: status.value };
+      if (note.value.trim()) body.note = note.value.trim(); else delete body.note;
+      await guard(() => (s ? wallet.correct(s.rootId, body) : wallet.add('value-system', body)));
+      close(true); render();
+    } }, field(t('sys.title'), title), field(t('sys.W'), W, t('sys.WHint')), field(t('goal.status'), status), field(t('cp.note'), note), msg, submitRow());
+  });
 }
 
 function goalDialog(g) {
   const b = g ? g.body : { status: 'active' };
   return modal(t(g ? 'goal.editTitle' : 'goal.addTitle'), (close) => {
     const title = h('input', { type: 'text', maxlength: 300, value: b.title || '' });
+    const sys = select([['', t('sys.other')], ...systems().map((s) => [s.rootId, s.body.title])], b.systemId || '');
     const why = h('textarea', { rows: 2, maxlength: 2000 }, b.why || '');
-    const signs = h('textarea', { rows: 2, maxlength: 2000 }, b.signs || '');
-    const horizon = h('input', { type: 'text', maxlength: 100, value: b.horizon || '' });
     const S = h('input', { type: 'number', step: 'any', min: 0, value: b.S ?? '' });
     const N = h('input', { type: 'number', step: 'any', min: 0, value: b.N ?? '' });
     const unit = h('input', { type: 'text', maxlength: 40, value: b.unit || '' });
@@ -590,34 +881,17 @@ function goalDialog(g) {
       if (!(Number(S.value) > 0)) { msg.textContent = t('goal.needS'); return; }
       if (N.value !== '' && !(Number(N.value) > 0)) { msg.textContent = t('goal.needN'); return; }
       const body = { title: title.value.trim(), S: Number(S.value), status: status.value, factIds: b.factIds || [] };
+      if (sys.value) body.systemId = sys.value;
       if (N.value !== '') body.N = Number(N.value);
-      for (const [k, el] of [['why', why], ['signs', signs], ['horizon', horizon], ['unit', unit]]) if (el.value.trim()) body[k] = el.value.trim();
+      if (why.value.trim()) body.why = why.value.trim();
+      if (unit.value.trim()) body.unit = unit.value.trim();
       await guard(() => (g ? wallet.correct(g.rootId, body) : wallet.add('goal', body)));
       close(true); render();
     } },
-    field(t('goal.title'), title), field(t('goal.why'), why), field(t('goal.signs'), signs),
+    field(t('goal.title'), title), field(t('goal.system'), sys), field(t('goal.why'), why),
     h('div', { class: 'vw-inline' }, field(t('goal.S'), S, t('goal.SHint')), field(t('goal.N'), N, t('goal.NHint')), field(t('goal.unit'), unit)),
-    h('div', { class: 'vw-inline' }, field(t('goal.horizon'), horizon), field(t('goal.status'), status)),
-    msg, h('div', { class: 'vw-actions' }, h('button', { class: 'vw-btn vw-primary', type: 'submit' }, t('save'))));
+    field(t('goal.status'), status), msg, submitRow());
   });
-}
-
-// Facts
-
-function tabFacts() {
-  const facts = wallet.list('fact').sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  const out = [h('div', { class: 'vw-toolbar' }, h('button', { class: 'vw-btn vw-primary', onclick: () => factDialog() }, t('fact.add')))];
-  out.push(h('p', { class: 'vw-hint' }, t('fact.lead')));
-  if (!facts.length) out.push(h('p', { class: 'vw-empty' }, t('fact.empty')));
-  for (const f of facts) {
-    const goals = (f.body.goalIds || []).map((id) => wallet.get(id)?.body.title).filter(Boolean);
-    out.push(h('article', { class: 'vw-card' },
-      h('div', { class: 'vw-row' }, h('span', { class: 'vw-muted' }, f.body.topic || ''), h('span', { class: 'vw-chip' }, t('conf.' + f.body.certainty) + (f.body.exploring ? ' · ' + t('fact.exploring') : ''))),
-      h('p', {}, f.body.text),
-      goals.length ? h('p', { class: 'vw-muted' }, t('fact.goals') + ': ' + goals.join(', ')) : null,
-      h('div', { class: 'vw-actions' }, h('button', { class: 'vw-btn vw-ghost', onclick: () => factDialog(f) }, t('fact.revise')), itemMenu(f))));
-  }
-  return out;
 }
 
 function factDialog(f) {
@@ -627,8 +901,7 @@ function factDialog(f) {
     const text = h('textarea', { rows: 4, maxlength: 2000 }, b.text || '');
     const cert = select(['low', 'medium', 'high'].map((k) => [k, t('conf.' + k)]), b.certainty);
     const exploring = h('input', { type: 'checkbox', checked: !!b.exploring });
-    const goals = wallet.list('goal');
-    const boxes = goals.map((g) => h('label', { class: 'vw-check' }, h('input', { type: 'checkbox', value: g.rootId, checked: (b.goalIds || []).includes(g.rootId) }), h('span', {}, g.body.title)));
+    const boxes = wallet.list('goal').map((g) => h('label', { class: 'vw-check' }, h('input', { type: 'checkbox', value: g.rootId, checked: (b.goalIds || []).includes(g.rootId) }), h('span', {}, g.body.title)));
     const msg = h('p', { class: 'vw-error', role: 'alert' });
     return h('form', { onsubmit: async (e) => {
       e.preventDefault();
@@ -637,44 +910,145 @@ function factDialog(f) {
       if (topic.value.trim()) body.topic = topic.value.trim();
       await guard(() => (f ? wallet.correct(f.rootId, body) : wallet.add('fact', body)));
       close(true); render();
-    } },
-    field(t('fact.topic'), topic), field(t('fact.text'), text),
+    } }, field(t('fact.topic'), topic), field(t('fact.text'), text),
     h('div', { class: 'vw-inline' }, field(t('fact.certainty'), cert), h('label', { class: 'vw-check' }, exploring, h('span', {}, t('fact.exploringLong')))),
-    goals.length ? h('fieldset', {}, h('legend', {}, t('fact.goals')), boxes) : null,
-    msg, h('div', { class: 'vw-actions' }, h('button', { class: 'vw-btn vw-primary', type: 'submit' }, t('save'))));
+    boxes.length ? h('fieldset', {}, h('legend', {}, t('fact.goals')), boxes) : null, msg, submitRow());
   });
 }
 
-// Settings
+// ---- analytics ----
+
+function tabAnalytics() {
+  const per = select([['30', t('an.p30')], ['90', t('an.p90')], ['365', t('an.p365')], ['all', t('an.pAll')]], period);
+  per.setAttribute('aria-label', t('an.period'));
+  per.addEventListener('change', () => { period = per.value; render(); });
+  const since = period === 'all' ? '' : new Date(Date.now() - Number(period) * 86400000).toISOString().slice(0, 10);
+  const evs = events().filter((e) => !since || String(e.body.occurredAt).slice(0, 10) >= since).map(withOwner);
+  const as = assessments().map((a) => ({ ...a.body, createdAt: a.createdAt }));
+  const an = V.analytics(evs, as, selfId());
+  const om = V.systemWeights(systemsForValue(), goalsForValue());
+  const totalV = an.total.all?.v || 0;
+  const table = (title, group, label, extra) => {
+    const rows = Object.entries(group).sort((a, b) => b[1].v - a[1].v);
+    return h('section', {}, h('h2', {}, title), rows.length ? h('div', { class: 'vw-table-wrap' }, h('table', { class: 'vw-table' },
+      h('thead', {}, h('tr', {}, h('th', {}, ''), h('th', {}, t('an.events')), h('th', {}, t('an.assessed')), h('th', {}, t('an.v')), h('th', {}, t('an.spent')), h('th', {}, t('an.eff')), extra ? h('th', {}, extra.head) : null)),
+      h('tbody', {}, rows.map(([k, g]) => h('tr', {}, h('th', { scope: 'row' }, label(k)), h('td', {}, g.events), h('td', {}, g.assessed), h('td', {}, pct(g.v)), h('td', {}, pct(g.spentV)), h('td', {}, g.efficiency == null ? '-' : num(g.efficiency)), extra ? h('td', {}, extra.cell(k, g)) : null))))) : h('p', { class: 'vw-muted' }, t('an.none')));
+  };
+  return [
+    h('div', { class: 'vw-toolbar' }, per),
+    h('p', { class: 'vw-hint' }, t('an.lead')),
+    h('div', { class: 'vw-kpis' },
+      h('div', { class: 'vw-kpi' }, h('div', { class: 'vw-kpi-n' }, String(an.total.all?.events || 0)), h('div', { class: 'vw-muted' }, t('an.events'))),
+      h('div', { class: 'vw-kpi' }, h('div', { class: 'vw-kpi-n' }, pct(totalV)), h('div', { class: 'vw-muted' }, t('an.v'))),
+      h('div', { class: 'vw-kpi' }, h('div', { class: 'vw-kpi-n' }, an.total.all?.efficiency == null ? '-' : num(an.total.all.efficiency)), h('div', { class: 'vw-muted' }, t('an.eff')))),
+    table(t('an.bySystem'), an.bySystem, (k) => (k === 'none' ? t('sys.none') : sysTitle(k)), { head: t('an.weightVsValue'), cell: (k, g) => `${pct(om[k] ?? 0)} / ${totalV ? pct(g.v / totalV) : '-'}` }),
+    table(t('an.byContact'), an.byContact, (k) => nameOf(k)),
+    table(t('an.byAction'), an.byAction, (k) => k || '-'),
+    table(t('an.byRole'), an.byRole, (k) => t('role.' + k)),
+  ];
+}
+
+// ---- inbox ----
+
+function tabInbox() {
+  const sugg = events(true).filter((e) => e.body.status === 'suggested');
+  const msgs = wallet.list('message-in').sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const out = [h('div', { class: 'vw-toolbar' }, h('button', { class: 'vw-btn', onclick: async () => { const d = await pickFile(); if (d) await receiveMessage(d); } }, t('in.open')))];
+  out.push(h('h2', {}, t('in.suggested')));
+  if (!sugg.length) out.push(h('p', { class: 'vw-muted' }, t('in.noSuggested')));
+  for (const e of sugg) {
+    out.push(h('article', { class: 'vw-card' },
+      h('div', { class: 'vw-row' }, h('h3', {}, phrase(e)), h('span', { class: 'vw-chip' }, t('in.from', { name: nameOf(e.body.suggestedBy) }))),
+      h('div', { class: 'vw-actions' },
+        h('button', { class: 'vw-btn vw-primary', onclick: async () => { await guard(() => wallet.correct(e.rootId, { ...e.body, status: 'confirmed' })); render(); } }, t('in.confirm')),
+        h('button', { class: 'vw-btn', onclick: () => eventDialog(null, { ...e.body }).then(async (id) => { if (id) { await wallet.correct(e.rootId, { ...e.body, status: 'rejected' }); render(); } }) }, t('in.editConfirm')),
+        h('button', { class: 'vw-btn vw-ghost', onclick: async () => { await guard(() => wallet.correct(e.rootId, { ...e.body, status: 'rejected' })); render(); } }, t('in.reject')))));
+  }
+  out.push(h('h2', {}, t('in.messages')));
+  if (!msgs.length) out.push(h('p', { class: 'vw-muted' }, t('in.noMessages')));
+  for (const m of msgs) {
+    const b = m.body.body;
+    const sender = m.body.from ? (wallet.contactByAddress(m.body.from)?.body.name || short(m.body.from)) : t('in.anonymous');
+    const words = b.event ? `${b.event.actor} ${b.event.action} ${(b.event.objects || []).join(', ')}` : '';
+    const acts = [];
+    if (b.kind === 'request') acts.push(h('button', { class: 'vw-btn vw-primary', onclick: () => answerRequest(m) }, t('in.answer')));
+    if (b.kind === 'card') acts.push(h('button', { class: 'vw-btn vw-primary', onclick: async () => { await guard(() => wallet.addCard(b.card)); await wallet.setMessageState(m.rootId, 'accepted'); render(); } }, t('in.addContact')));
+    if (m.body.state === 'new') acts.push(h('button', { class: 'vw-btn vw-ghost', onclick: async () => { await wallet.setMessageState(m.rootId, b.kind === 'share' ? 'accepted' : 'ignored'); render(); } }, t(b.kind === 'share' ? 'in.read' : 'in.ignore')));
+    out.push(h('article', { class: 'vw-card' + (m.body.state === 'new' ? ' vw-new' : '') },
+      h('div', { class: 'vw-row' }, h('h3', {}, t('in.kind.' + b.kind)), h('span', { class: 'vw-chip' }, sender + (m.body.verified ? ' ✓' : ''))),
+      words ? h('p', {}, words) : null,
+      b.kind === 'share' ? [typeof b.v === 'number' ? h('p', { class: 'vw-v' }, t('val.short', { v: pct(b.v) })) : null, (b.gained || []).map((x) => h('div', { class: 'vw-gained' }, '+ ' + x)), (b.lost || []).map((x) => h('div', { class: 'vw-lost' }, '- ' + x)), h('p', { class: 'vw-muted vw-small' }, t('in.publish.' + b.publish))] : null,
+      b.kind === 'request' && b.plan?.promise ? h('p', { class: 'vw-plan' }, t('reg.promise', { p: b.plan.promise })) : null,
+      b.kind === 'suggestion' ? h('p', { class: 'vw-muted' }, t('in.suggestionNote', { n: b.events.length })) : null,
+      h('div', { class: 'vw-actions' }, acts)));
+  }
+  return out;
+}
+
+async function receiveMessage(doc) {
+  if (doc.type !== 'aevri.vledger.message') { toast(t('in.notMessage')); return; }
+  const r = await guard(() => wallet.receive(doc));
+  if (!r) return;
+  toast(r.dropped ? t('in.dropped') : t('in.received'));
+  tab = 'inbox'; render();
+}
+
+async function answerRequest(m) {
+  const b = m.body.body;
+  const me = selfId();
+  const sender = m.body.from ? wallet.contactByAddress(m.body.from) : null;
+  const senderId = sender ? sender.rootId : await wallet.add('contact', { type: 'organization', name: b.event?.actor && !/^(me|я)$/i.test(b.event.actor) ? b.event.actor : t('cp.unknown'), ...(m.body.from ? { address: m.body.from } : {}) });
+  const sys = b.systemRegistryUrl ? systems().find((s) => s.body.registryUrl === b.systemRegistryUrl) : systems().find((s) => s.body.title.toLowerCase() === String(b.system || '').toLowerCase());
+  const meActs = /^(me|я)$/i.test(b.event?.actor || '');
+  const evId = await eventDialog(null, { role: meActs ? 'user' : 'affected', actor: meActs ? me : senderId, action: b.event?.action || '', objects: (b.event?.objects || []).map((label) => ({ label })), affected: meActs ? [] : [me], systemId: sys?.rootId, registryRef: b.event?.registryRef });
+  if (!evId) return;
+  if (b.plan?.promise) await wallet.add('plan', { eventId: evId, author: senderId, promise: b.plan.promise, ...(typeof b.plan.plannedV === 'number' ? { plannedV: b.plan.plannedV } : {}) }, { source: 'message' });
+  await wallet.setMessageState(m.rootId, 'accepted');
+  render();
+  assessDialog(evId, null, { phase: 'realized' });
+}
+
+// ---- settings ----
 
 function tabSettings() {
   const s = wallet.settings();
-  const cps = wallet.list('counterparty').filter((c) => c.body.type !== 'self');
-  const types = wallet.list('element-type');
+  const req = s.requests || {};
+  const saveReq = async (patch) => { const cur = wallet.settings(); await guard(() => wallet.saveSettings({ ...cur, requests: { ...(cur.requests || {}), ...patch } })); toast(t('saved')); };
   const def = h('input', { type: 'range', min: 0, max: 1, step: 0.05, value: s.planCountDefault });
-  const defOut = h('output', {}, fmtPct(s.planCountDefault));
-  def.addEventListener('input', () => { defOut.textContent = fmtPct(Number(def.value)); });
+  const defOut = h('output', {}, pct(s.planCountDefault));
+  def.addEventListener('input', () => { defOut.textContent = pct(Number(def.value)); });
   def.addEventListener('change', async () => { await guard(() => wallet.saveSettings({ ...wallet.settings(), planCountDefault: Number(def.value) })); toast(t('saved')); });
-  const per = cps.map((c) => {
-    const rule = (s.planCountBy || []).find((r) => r.counterpartyId === c.rootId && !r.typeId);
-    const inp = h('input', { type: 'number', min: 0, max: 100, step: 5, value: rule ? Math.round(rule.factor * 100) : '', placeholder: t('set.inherit'), 'aria-label': c.body.name });
-    inp.addEventListener('change', async () => {
-      const cur = wallet.settings();
-      const rules = (cur.planCountBy || []).filter((r) => !(r.counterpartyId === c.rootId && !r.typeId));
-      if (inp.value !== '') rules.push({ counterpartyId: c.rootId, factor: Math.max(0, Math.min(100, Number(inp.value))) / 100 });
-      await guard(() => wallet.saveSettings({ ...cur, planCountBy: rules })); toast(t('saved'));
-    });
-    return h('div', { class: 'vw-row' }, h('span', {}, c.body.name), h('span', { class: 'vw-inline' }, inp, '%'));
-  });
+  const blockAll = h('input', { type: 'checkbox', checked: !!req.blockAll, onchange: (e) => saveReq({ blockAll: e.target.checked }) });
+  const sysBoxes = systems().map((x) => h('label', { class: 'vw-check' }, h('input', { type: 'checkbox', checked: (req.blockSystems || []).includes(x.rootId), onchange: (e) => {
+    const set = new Set(wallet.settings().requests?.blockSystems || []);
+    if (e.target.checked) set.add(x.rootId); else set.delete(x.rootId);
+    saveReq({ blockSystems: [...set] });
+  } }), h('span', {}, x.body.title)));
+  const st = s.storage || { stores: false, publishes: 'no' };
+  const stStores = h('input', { type: 'checkbox', checked: !!st.stores });
+  const stPurpose = h('input', { type: 'text', maxlength: 300, value: st.purpose || '' });
+  const stDays = h('input', { type: 'number', min: 0, value: st.retentionDays ?? '' });
+  const stPub = select(['no', 'anonymous', 'named', 'sender-choice'].map((k) => [k, t('sh.publishes.' + k)]), st.publishes);
+  const types = wallet.list('element-type');
   return [
+    h('h2', {}, t('set.requests')), h('p', { class: 'vw-hint' }, t('set.requestsHint')),
+    h('label', { class: 'vw-check' }, blockAll, h('span', {}, t('set.blockAll'))),
+    sysBoxes.length ? h('fieldset', {}, h('legend', {}, t('set.blockSystems')), sysBoxes) : null,
+    h('p', { class: 'vw-hint' }, t('set.blockContactsHint')),
     h('h2', {}, t('set.plan')), h('p', { class: 'vw-hint' }, t('set.planHint')),
     field(t('set.planDefault'), h('div', { class: 'vw-inline' }, def, defOut)),
-    per.length ? h('details', {}, h('summary', {}, t('set.planPer')), per) : null,
+    h('h2', {}, t('set.myPolicy')), h('p', { class: 'vw-hint' }, t('set.myPolicyHint')),
+    h('form', { onsubmit: async (e) => {
+      e.preventDefault();
+      const storage = { stores: stStores.checked, publishes: stPub.value };
+      if (stPurpose.value.trim()) storage.purpose = stPurpose.value.trim();
+      if (stDays.value !== '') storage.retentionDays = Number(stDays.value);
+      await guard(() => wallet.saveSettings({ ...wallet.settings(), storage })); toast(t('saved'));
+    } }, h('label', { class: 'vw-check' }, stStores, h('span', {}, t('set.stores'))), field(t('set.purpose'), stPurpose), field(t('set.days'), stDays), field(t('set.publishes'), stPub), submitRow()),
     h('h2', {}, t('set.types')),
     types.map((x) => h('div', { class: 'vw-row' }, h('span', {}, `${x.body.name} · ${t('cat.' + x.body.category)}`), itemMenu(x))),
     h('button', { class: 'vw-btn', onclick: typeDialog }, t('set.addType')),
-    h('h2', {}, t('set.storage')),
-    h('p', { class: 'vw-hint' }, t('set.storageHint')),
+    h('h2', {}, t('set.storage')), h('p', { class: 'vw-hint' }, t('set.storageHint')),
     h('div', { class: 'vw-actions' },
       h('button', { class: 'vw-btn', onclick: () => download(`${slug(wallet.doc.extensions.label)}_${today()}.vledger.json`, wallet.exportEncrypted()) }, t('set.exportEnc')),
       h('button', { class: 'vw-btn', onclick: () => { if (confirm(t('set.readableWarn'))) download(`${slug(wallet.doc.extensions.label)}_${today()}_READABLE.json`, wallet.exportReadable()); } }, t('set.exportRead')),
@@ -696,13 +1070,13 @@ function tabSettings() {
 function typeDialog() {
   return modal(t('type.title'), (close) => {
     const name = h('input', { type: 'text', maxlength: 300 });
-    const cat = select(['thing', 'service', 'information', 'time', 'money', 'right', 'decision', 'relation', 'other'].map((k) => [k, t('cat.' + k)]), 'thing');
+    const cat = select(['thing', 'service', 'information', 'time', 'money', 'right', 'decision', 'relation', 'action', 'other'].map((k) => [k, t('cat.' + k)]), 'thing');
     return h('form', { onsubmit: async (e) => {
       e.preventDefault();
       if (!name.value.trim()) return;
       await guard(() => wallet.add('element-type', { name: name.value.trim(), category: cat.value }));
       close(true); render();
-    } }, field(t('type.name'), name), field(t('type.category'), cat), h('div', { class: 'vw-actions' }, h('button', { class: 'vw-btn vw-primary', type: 'submit' }, t('save'))));
+    } }, field(t('type.name'), name), field(t('type.category'), cat), submitRow());
   });
 }
 
@@ -719,8 +1093,7 @@ function passDialog() {
       await guard(() => wallet.changePassphrase(p1.value));
       p1.value = p2.value = '';
       close(true); toast(t('set.passChanged'));
-    } }, h('p', { class: 'vw-hint' }, t('set.passHint')), field(t('create.pass'), p1), field(t('create.pass2'), p2), msg,
-    h('div', { class: 'vw-actions' }, h('button', { class: 'vw-btn vw-primary', type: 'submit' }, t('save'))));
+    } }, h('p', { class: 'vw-hint' }, t('set.passHint')), field(t('create.pass'), p1), field(t('create.pass2'), p2), msg, submitRow());
   });
 }
 
@@ -728,14 +1101,13 @@ function passDialog() {
 
 async function render() {
   const app = $app();
+  const langSel = select(LANGS.map((x) => [x, x.toUpperCase()]), lang);
+  langSel.setAttribute('aria-label', t('language'));
+  langSel.addEventListener('change', async (e) => { await loadLang(e.target.value); render(); });
   const head = h('header', { class: 'vw-head' },
     h('div', { class: 'vw-brand' }, h('span', { class: 'vw-logo', 'aria-hidden': 'true' }, 'Æ'), h('span', {}, t('app.name'))),
-    h('div', { class: 'vw-headr' },
-      wallet ? h('span', { class: 'vw-muted' }, wallet.doc.extensions.label || '') : null,
-      select(LANGS.map((x) => [x, x.toUpperCase()]), lang),
+    h('div', { class: 'vw-headr' }, wallet ? h('span', { class: 'vw-muted' }, wallet.doc.extensions.label || '') : null, langSel,
       wallet ? h('button', { class: 'vw-btn vw-ghost', onclick: lockNow }, t('lock')) : null));
-  head.querySelector('select').setAttribute('aria-label', t('language'));
-  head.querySelector('select').addEventListener('change', async (e) => { await loadLang(e.target.value); render(); });
   const main = h('main', { class: 'vw-main' }, wallet ? renderWallet() : await renderStart());
   const foot = h('footer', { class: 'vw-foot' }, h('span', {}, wallet ? t('foot.unlocked') : t('foot.locked')), ' ', h('a', { href: 'https://aeilus.institute/tools/' }, 'ÆVRI'));
   app.replaceChildren(head, main, foot);
@@ -746,9 +1118,7 @@ export async function start() {
   try { saved = localStorage.getItem('vledger.lang'); } catch { /* ignore */ }
   await loadLang(saved || (navigator.language || 'en').slice(0, 2));
   ['pointerdown', 'keydown'].forEach((ev) => document.addEventListener(ev, touch, { passive: true }));
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') touch(); });
   await render();
 }
 
-// For tests only.
-export const _test = { get wallet() { return wallet; }, set wallet(w) { wallet = w; }, render, valueSentence };
+export const _test = { get wallet() { return wallet; }, render };

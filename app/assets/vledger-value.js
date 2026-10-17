@@ -1,11 +1,33 @@
 // aevri.vledger 1.0 reference: value model (SPEC 7). Pure functions, no I/O.
 
-// goals: [{id, S, N?, status}], contributions: [{goalId, c?, k?}]
-export function goalWeights(goals) {
+// goals: [{id, S, N?, status, systemId?}], systems: [{id, W, status}] (SPEC 7)
+// Global goal weight w = (W / sum W) * (S / sum S in the system). Goals without a known active system go to an
+// implicit system "Other" whose W is the mean W of the active systems (1 when there are none). Goals of a dropped
+// system weigh 0.
+export const OTHER = '__other';
+
+export function systemWeights(systems = [], goals = []) {
+  const active = systems.filter((x) => x.status === 'active');
+  const known = new Set(systems.map((x) => x.id));
+  const needOther = goals.some((g) => g.status === 'active' && !known.has(g.systemId));
+  const meanW = active.length ? active.reduce((t, x) => t + x.W, 0) / active.length : 1;
+  const all = needOther ? [...active, { id: OTHER, W: meanW }] : active;
+  const total = all.reduce((t, x) => t + x.W, 0);
+  const om = {};
+  for (const x of all) om[x.id] = total > 0 ? x.W / total : 0;
+  return om;
+}
+
+export function goalWeights(goals, systems = []) {
+  const om = systemWeights(systems, goals);
+  const known = new Set(systems.map((x) => x.id));
+  // a goal of a dropped system weighs 0; a goal without a system (or of an unknown one) goes to Other
+  const sysOf = (g) => (g.systemId && g.systemId in om ? g.systemId : (known.has(g.systemId) ? null : OTHER));
   const active = goals.filter((g) => g.status === 'active');
-  const total = active.reduce((s, g) => s + g.S, 0);
+  const sums = {};
+  for (const g of active) sums[sysOf(g)] = (sums[sysOf(g)] || 0) + g.S;
   const w = {};
-  for (const g of active) w[g.id] = total > 0 ? g.S / total : 0;
+  for (const g of active) w[g.id] = sysOf(g) === null ? 0 : (om[sysOf(g)] ?? 0) * (sums[sysOf(g)] > 0 ? g.S / sums[sysOf(g)] : 0);
   return w;
 }
 
@@ -15,8 +37,8 @@ export function progressShare(goal, contribution) {
 }
 
 // Comparable value v = sum over goals of w * k. Contributions to goals that are not active count 0.
-export function comparableValue(goals, contributions) {
-  const w = goalWeights(goals);
+export function comparableValue(goals, contributions, systems = []) {
+  const w = goalWeights(goals, systems);
   const byId = Object.fromEntries(goals.map((g) => [g.id, g]));
   let v = 0;
   const parts = [];
@@ -31,12 +53,13 @@ export function comparableValue(goals, contributions) {
 }
 
 // Planned value counts only through the holder's factor; default 0 (SPEC 7, TZ D-5).
-export function planFactor(settings, { counterpartyId, typeId } = {}) {
+// Rule precedence: contact and system, contact, system, default.
+export function planFactor(settings, { contactId, systemId } = {}) {
   const rules = (settings && settings.planCountBy) || [];
-  const byBoth = rules.find((r) => r.counterpartyId === counterpartyId && r.typeId === typeId && counterpartyId && typeId);
-  const byCp = rules.find((r) => r.counterpartyId === counterpartyId && !r.typeId);
-  const byType = rules.find((r) => r.typeId === typeId && !r.counterpartyId);
-  const rule = byBoth || byCp || byType;
+  const byBoth = contactId && systemId && rules.find((r) => r.contactId === contactId && r.systemId === systemId);
+  const byContact = contactId && rules.find((r) => r.contactId === contactId && !r.systemId);
+  const bySystem = systemId && rules.find((r) => r.systemId === systemId && !r.contactId);
+  const rule = byBoth || byContact || bySystem;
   if (rule) return rule.factor;
   return (settings && typeof settings.planCountDefault === 'number') ? settings.planCountDefault : 0;
 }
@@ -87,6 +110,54 @@ export function feelingChecks(goals, assessments, now = new Date()) {
     const touches = (id) => recent.filter((a) => (a.contributions || []).some((c) => c.goalId === id)).length;
     const others = active.filter((g) => g.id !== top.id).reduce((s, g) => s + touches(g.id), 0);
     if (touches(top.id) === 0 && others >= 3) out.push({ code: 'top-goal-untouched', goalId: top.id });
+  }
+  return out;
+}
+
+// Spent value, efficiency, net value (SPEC 7, TZ v0.3 D-24).
+export function assessValue(goals, systems, contributions = [], spent = []) {
+  const a = comparableValue(goals, contributions, systems);
+  const b = comparableValue(goals, spent, systems);
+  return { v: a.v, parts: a.parts, spentV: b.v, spentParts: b.parts, efficiency: b.v > 0 ? a.v / b.v : null, net: a.v - b.v };
+}
+
+// Nearest reference on a log scale among [{v, phrase}] (SPEC 7, TZ v0.3 REF-2).
+export function nearestReference(refs, v) {
+  const dist = (r) => Math.abs(Math.log(Math.abs(r.v)) - Math.log(Math.abs(v)));
+  const ok = refs.filter((r) => typeof r.v === 'number' && r.v !== 0);
+  if (!ok.length || typeof v !== 'number' || v === 0) return null;
+  const best = ok.reduce((m, r) => (dist(r) < dist(m) ? r : m));
+  return { ...best, ratio: v / best.v };
+}
+
+// Retro only after an earlier realized assessment of the same event object (SPEC 5.3).
+export function retroAllowed(assessments, eventId, objectIndex = null) {
+  return assessments.some((a) => a.eventId === eventId && (a.objectIndex ?? null) === (objectIndex ?? null) && a.phase === 'realized');
+}
+
+// Analytics on confirmed events (SPEC 14). events: [{id, actor, action, actionType?, affected[], role, systemId?, status}],
+// assessments: [{eventId, phase, v?, spentV?, createdAt}]. The value of an event is its latest assessment (retro over
+// realized). Returns {bySystem, byContact, byAction, byRole, total}, each {key: {events, assessed, v, spentV, efficiency}}.
+export function analytics(events, assessments, selfId) {
+  const latest = {};
+  for (const a of [...assessments].sort((x, y) => String(x.createdAt).localeCompare(String(y.createdAt)))) {
+    if (!latest[a.eventId] || a.phase === 'retro' || latest[a.eventId].phase !== 'retro') latest[a.eventId] = a;
+  }
+  const out = { bySystem: {}, byContact: {}, byAction: {}, byRole: {}, total: {} };
+  const add = (group, key, e) => {
+    const g = (group[key] ||= { events: 0, assessed: 0, v: 0, spentV: 0, efficiency: null });
+    g.events++;
+    const a = latest[e.id];
+    if (a) { g.assessed++; g.v += a.v || 0; g.spentV += a.spentV || 0; }
+    g.efficiency = g.spentV > 0 ? g.v / g.spentV : null;
+  };
+  for (const e of events.filter((x) => x.status === 'confirmed')) {
+    const other = e.actor === selfId ? (e.affected || [])[0] || selfId : e.actor;
+    add(out.bySystem, e.systemId || 'none', e);
+    add(out.byContact, other, e);
+    add(out.byAction, (e.actionType || e.action || '').trim().toLowerCase(), e);
+    add(out.byRole, e.role, e);
+    add(out.total, 'all', e);
   }
   return out;
 }
