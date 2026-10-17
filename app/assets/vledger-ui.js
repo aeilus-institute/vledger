@@ -62,7 +62,7 @@ function t(key, vars = {}) {
 
 async function loadLang(code) {
   lang = LANGS.includes(code) ? code : 'en';
-  L = await (await fetch(new URL('./locales/' + lang + '.json', import.meta.url))).json();
+  L = await (await fetch(new URL('./locales/' + lang + '.json', import.meta.url), { cache: 'no-cache' })).json();
   document.documentElement.lang = lang;
   try { localStorage.setItem('vledger.lang', lang); } catch { /* storage may be blocked */ }
 }
