@@ -62,7 +62,7 @@ async function runPending() {
   }
 }
 let tab = 'timeline';
-let filters = { system: '', role: '', contact: '' };
+let filters = { system: '', role: '', contact: '', assessed: '' };
 let period = '90';
 let idleTimer = null;
 let notices = []; // pending recovery requests reported by providers on sync
@@ -552,9 +552,14 @@ function tabTimeline() {
   };
   let evs = events().sort((a, b) => String(b.body.occurredAt).localeCompare(String(a.body.occurredAt)));
   if (filters.system) evs = evs.filter((e) => (e.body.systemId || '') === filters.system);
-  if (filters.role) evs = evs.filter((e) => e.body.role === filters.role);
+  // Direction of value (owner, 2026-10-17): I gave it (I acted) or I received it (it was done to me, I use it, I saw it)
+  if (filters.role) evs = evs.filter((e) => (e.body.role === 'actor') === (filters.role === 'gave'));
   if (filters.contact) evs = evs.filter((e) => involves(e, wallet.get(filters.contact) || { rootId: filters.contact, body: {} }));
   const as = assessments();
+  if (filters.assessed) {
+    const done = new Set(as.map((a) => a.body.eventId));
+    evs = evs.filter((e) => done.has(e.rootId) === (filters.assessed === 'yes'));
+  }
   const due = as.filter((a) => a.body.checkAfter && a.body.checkAfter <= today() && !as.some((b) => b.body.eventId === a.body.eventId && b.firstAt > a.firstAt));
   const out = [
     h('div', { class: 'vw-toolbar' },
@@ -563,7 +568,8 @@ function tabTimeline() {
       h('button', { class: 'vw-btn', onclick: aevriImportDialog }, t('ai.btn'))),
     h('div', { class: 'vw-filters' },
       sel('system', systems().map((s) => [s.rootId, s.body.title])),
-      sel('role', ['actor', 'affected', 'user', 'witness'].map((r) => [r, t('role.' + r)])),
+      sel('role', [['gave', t('dir.gave')], ['got', t('dir.got')]]),
+      sel('assessed', [['yes', t('f.assessed.yes')], ['no', t('f.assessed.no')]]),
       sel('contact', contacts().filter((c) => c.body.type !== 'self').map((c) => [c.rootId, c.body.name]))),
   ];
   if (due.length) {

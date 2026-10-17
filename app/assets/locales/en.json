@@ -64,10 +64,10 @@
   "tab.settings": "Settings",
   "tab.facts": "Facts",
   "f.system": "Value system",
-  "f.role": "My role",
+  "f.role": "Direction of value",
   "f.contact": "Contact",
   "f.all.system": "All systems",
-  "f.all.role": "All roles",
+  "f.all.role": "Given and received",
   "f.all.contact": "All contacts",
   "role.actor": "I did it",
   "role.affected": "done to me",
@@ -573,5 +573,11 @@
   "ai.signInLink": "Sign in",
   "ai.go": "Add to my timeline",
   "ai.unit": "ÆVRI reaction",
-  "ai.done": "Added {events} events and {assessments} assessments"
+  "ai.done": "Added {events} events and {assessments} assessments",
+  "dir.gave": "I gave value",
+  "dir.got": "I received value",
+  "f.assessed": "Assessment",
+  "f.all.assessed": "With and without assessment",
+  "f.assessed.yes": "Assessed",
+  "f.assessed.no": "Not assessed yet"
 }

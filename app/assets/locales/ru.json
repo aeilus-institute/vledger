@@ -64,10 +64,10 @@
   "tab.settings": "Настройки",
   "tab.facts": "Факты",
   "f.system": "Система ценности",
-  "f.role": "Моя роль",
+  "f.role": "Направление ценности",
   "f.contact": "Контакт",
   "f.all.system": "Все системы",
-  "f.all.role": "Все роли",
+  "f.all.role": "Отдал и получил",
   "f.all.contact": "Все контакты",
   "role.actor": "сделал я",
   "role.affected": "сделали со мной",
@@ -573,5 +573,11 @@
   "ai.signInLink": "Войти",
   "ai.go": "Добавить на шкалу",
   "ai.unit": "реакция ÆVRI",
-  "ai.done": "Добавлено событий: {events}, оценок: {assessments}"
+  "ai.done": "Добавлено событий: {events}, оценок: {assessments}",
+  "dir.gave": "Я отдал ценность",
+  "dir.got": "Я получил ценность",
+  "f.assessed": "Оценка",
+  "f.all.assessed": "С оценкой и без",
+  "f.assessed.yes": "С оценкой",
+  "f.assessed.no": "Ещё без оценки"
 }
