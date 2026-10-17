@@ -345,7 +345,10 @@ function providerDialog() {
         await wallet.saveProvider(cfg);
         token.value = '';
         close(true); toast(t('pv.added')); render();
-      } catch (err) { msg.textContent = t('pv.failed', { msg: err.message }); btn.disabled = false; }
+      } catch (err) {
+        msg.textContent = err.code === 'vledger/sign-in' ? t('pv.signIn') : t('pv.failed', { msg: err.message });
+        btn.disabled = false;
+      }
     } }, field(t('pv.kind'), kind), boxA, boxG, boxC, msg, h('div', { class: 'vw-actions' }, btn));
   });
 }
@@ -1322,7 +1325,8 @@ async function render() {
 export async function start() {
   let saved = null;
   try { saved = localStorage.getItem('vledger.lang'); } catch { /* ignore */ }
-  await loadLang(saved || (navigator.language || 'en').slice(0, 2));
+  const siteLang = document.querySelector('meta[name="aevri-lang"]')?.content; // set by the institute page for /xx/ addresses
+  await loadLang(saved || (LANGS.includes(siteLang) ? siteLang : null) || (navigator.language || 'en').slice(0, 2));
   ['pointerdown', 'keydown'].forEach((ev) => document.addEventListener(ev, touch, { passive: true }));
   await render();
 }

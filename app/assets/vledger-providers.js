@@ -27,14 +27,15 @@ export const AEVRI_URL = 'https://aeilus.institute/api/v1/vledger';
 
 export function makeProvider(cfg) {
   if (cfg.kind === 'github') return new GitHubProvider(cfg.config || {});
-  return new HttpProvider(cfg.url || AEVRI_URL);
+  return new HttpProvider(cfg.url || AEVRI_URL, { ageConfirmed: !!cfg.ageConfirmed });
 }
 
 // ---- HTTP provider ----
 
 export class HttpProvider {
-  constructor(url) {
+  constructor(url, { ageConfirmed = false } = {}) {
     this.url = url.replace(/\/$/, '');
+    this.ageConfirmed = ageConfirmed;
     // The account cookie goes only to the page's own site (the institute when the app runs there).
     this.credentials = typeof location !== 'undefined' && new URL(this.url).origin === location.origin ? 'include' : 'omit';
   }
@@ -53,13 +54,15 @@ export class HttpProvider {
     if (!r.ok) {
       let code = r.status;
       try { code = (await r.json()).code || code; } catch { /* no body */ }
-      throw new Error(`provider ${method} ${path}: ${code}`);
+      const err = new Error(`provider ${method} ${path}: ${code}`);
+      err.code = code;
+      throw err;
     }
     return r.status === 204 ? true : r.json();
   }
 
   getKeyring(id) { return this.req('GET', `/wallets/${id}/keyring`); }
-  putKeyring(doc, session) { return this.req('PUT', `/wallets/${doc.walletId}/keyring`, { body: { walletId: doc.walletId, createdAt: doc.createdAt, keyring: doc.keyring }, session }); }
+  putKeyring(doc, session) { return this.req('PUT', `/wallets/${doc.walletId}/keyring`, { body: { walletId: doc.walletId, createdAt: doc.createdAt, keyring: doc.keyring, ...(this.ageConfirmed ? { ageConfirmed: true } : {}) }, session }); }
   header(id) { return this.req('GET', `/wallets/${id}`); }
 
   async list(id) {

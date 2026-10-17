@@ -476,5 +476,6 @@
   "fg.recovered": "Access recovered with a new passphrase",
   "pv.notify.devices": "your devices",
   "pv.notify.email": "e-mail",
-  "pv.notify.contacts": "your contacts"
+  "pv.notify.contacts": "your contacts",
+  "pv.signIn": "Sign in to the institute first (top right of the site), then add the provider again."
 }
