@@ -60,7 +60,13 @@ defs = {
         'requests': {'type': 'object', 'properties': {'blockAll': {'type': 'boolean'}, 'blockSystems': {'type': 'array', 'items': ID}, 'blockContacts': {'type': 'array', 'items': ID}}},
         'relays': {'type': 'array', 'items': {'type': 'string', 'pattern': '^https://'}},
         'arbiters': {'type': 'array', 'items': c('arbiterRef')},
-        'providers': {'type': 'array', 'items': {'type': 'object', 'required': ['kind'], 'properties': {'kind': {'enum': ['device', 'file', 'aevri', 'github', 'webdav', 's3', 'custom']}, 'label': {'type': 'string'}, 'url': {'type': 'string'}}}},
+        'providers': {'type': 'array', 'items': {'type': 'object', 'required': ['kind'], 'properties': {
+            'kind': {'enum': ['device', 'file', 'aevri', 'github', 'webdav', 's3', 'custom']}, 'id': {'type': 'string', 'maxLength': 60},
+            'label': {'type': 'string'}, 'url': {'type': 'string'},
+            'config': {'type': 'object', 'properties': {'owner': {'type': 'string'}, 'repo': {'type': 'string'}, 'branch': {'type': 'string'},
+                                                        'token': {'type': 'string'}, 'apiBase': {'type': 'string'}}},
+            'recovery': {'type': 'object', 'properties': {'slotId': {'type': 'string'}, 'keyId': {'type': 'string'}}},
+            'lastSync': c('time'), 'ageConfirmed': {'type': 'boolean'}}}},
         'storage': c('storagePolicy')}},
     'messageIn': {'type': 'object', 'required': ['envelopeDigest', 'verified', 'receivedAt', 'body', 'state'], 'properties': {
         'envelopeDigest': c('sha256'), 'from': c('address'), 'verified': {'type': 'boolean'}, 'receivedAt': c('time'),

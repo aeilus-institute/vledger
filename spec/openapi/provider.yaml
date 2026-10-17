@@ -1,47 +1,79 @@
 openapi: 3.1.0
 info:
   title: aevri.vledger storage provider
-  version: 1.0.0-d1
-  summary: Stores encrypted value wallets. Never receives plain text or keys (SPEC section 8).
+  version: 1.0.0-d3
+  summary: Keeps encrypted copies of value wallets and, if the provider offers it, helps a holder recover access (SPEC 4.4, 8).
   license: { name: MIT, identifier: MIT }
   description: |
-    Any provider (the institute, a self-hosted server, an adapter over a Git repository or WebDAV) can implement this.
-    Authentication is the provider's own (an account session, a bearer token); the wallet format does not define it.
-    A provider sees wallet ids, record ids, sequence numbers, sizes and its own times only.
+    A provider never receives plain text or the holder's passphrase. It stores a wallet's keyring and its record
+    envelopes as a set (the record chain is rebuilt by each device, SPEC 8) and sees wallet ids, record ids, sizes and
+    its own times.
+
+    Access:
+    - **Read** (`GET` keyring, records, notices) needs the wallet id. The id is a random capability: whoever knows it can
+      download ciphertext, which is useless without the passphrase. A provider MAY additionally require its own login
+      (the institute requires an account aged 18 or over).
+    - **Write** needs a wallet proof: headers `X-Vledger-Address` (the wallet's `vw1:` address), `X-Vledger-Challenge`
+      (from `GET /challenge`) and `X-Vledger-Proof` (base64url Ed25519 signature of the UTF-8 challenge). The first
+      keyring upload binds the wallet id to the address of `keyring.identity.publicKey`; later writes must prove that
+      address.
+
     Errors use application/problem+json with codes `vledger/<code>`.
 servers:
   - url: https://aeilus.institute/api/v1/vledger
-    description: ÆVRI as an optional backup provider (L2, not built yet)
+    description: ÆVRI as an optional backup provider (L2 client ready; server not deployed)
+  - url: http://127.0.0.1:8793/v1
+    description: Reference provider for tests (spec/tools/provider_server.py)
 paths:
-  /wallets/{walletId}:
-    parameters: [ { $ref: '#/components/parameters/walletId' } ]
-    delete:
-      summary: Delete the whole wallet (keyring, envelopes, tombstones, recovery material)
+  /challenge:
+    get:
+      summary: One-time challenge, valid 5 minutes
+      security: []
       responses:
-        '204': { description: Deleted }
-        '404': { $ref: '#/components/responses/problem' }
+        '200': { description: Challenge, content: { application/json: { schema: { type: object, required: [challenge, expiresAt], properties: { challenge: { type: string }, expiresAt: { type: string } } } } } }
   /wallets/{walletId}/keyring:
     parameters: [ { $ref: '#/components/parameters/walletId' } ]
     get:
       summary: Read the keyring
       responses:
-        '200': { description: Keyring, headers: { ETag: { schema: { type: string } } }, content: { application/json: { schema: { $ref: 'https://aeilus.institute/schema/vledger/1/wallet.schema.json#/$defs/keyring' } } } }
+        '200': { description: Keyring, content: { application/json: { schema: { $ref: 'https://aeilus.institute/schema/vledger/1/wallet.schema.json#/$defs/keyring' } } } }
         '404': { $ref: '#/components/responses/problem' }
     put:
-      summary: Create or replace the keyring (If-Match on replace, If-None-Match "*" on create)
-      parameters:
-        - { name: If-Match, in: header, schema: { type: string } }
-        - { name: If-None-Match, in: header, schema: { type: string } }
-      requestBody: { required: true, content: { application/json: { schema: { $ref: 'https://aeilus.institute/schema/vledger/1/wallet.schema.json#/$defs/keyring' } } } }
+      summary: Create or replace the keyring (wallet proof; a lower revision than stored is refused with 409)
+      parameters: [ { $ref: '#/components/parameters/proofAddress' }, { $ref: '#/components/parameters/proofChallenge' }, { $ref: '#/components/parameters/proof' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [walletId, createdAt, keyring]
+              properties:
+                walletId: { type: string }
+                createdAt: { type: string }
+                keyring: { $ref: 'https://aeilus.institute/schema/vledger/1/wallet.schema.json#/$defs/keyring' }
       responses:
         '204': { description: Stored }
-        '412': { $ref: '#/components/responses/problem' }
+        '403': { $ref: '#/components/responses/problem' }
+        '409': { $ref: '#/components/responses/problem' }
+  /wallets/{walletId}:
+    parameters: [ { $ref: '#/components/parameters/walletId' } ]
+    get:
+      summary: Wallet header (walletId, createdAt, keyring revision, record count, bytes)
+      responses:
+        '200': { description: Header }
+        '404': { $ref: '#/components/responses/problem' }
+    delete:
+      summary: Delete everything of this wallet, including any recovery material (wallet proof)
+      parameters: [ { $ref: '#/components/parameters/proofAddress' }, { $ref: '#/components/parameters/proofChallenge' }, { $ref: '#/components/parameters/proof' } ]
+      responses:
+        '204': { description: Deleted }
   /wallets/{walletId}/records:
     parameters: [ { $ref: '#/components/parameters/walletId' } ]
     get:
-      summary: Envelopes and tombstones after a sequence number, in order
+      summary: Envelopes and tombstones in the provider's order, after a cursor
       parameters:
-        - { name: sinceSeq, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: after, in: query, schema: { type: integer, minimum: 0, default: 0 } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 1000, default: 500 } }
       responses:
         '200':
@@ -50,55 +82,102 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [items, more]
+                required: [items, cursor, more]
                 properties:
                   items: { type: array, items: { oneOf: [ { $ref: 'https://aeilus.institute/schema/vledger/1/wallet.schema.json#/$defs/envelope' }, { $ref: 'https://aeilus.institute/schema/vledger/1/wallet.schema.json#/$defs/tombstone' } ] } }
+                  cursor: { type: integer }
                   more: { type: boolean }
     post:
-      summary: Append envelopes. An id is accepted once; a seq already taken returns 409 and the client rebases (SPEC 8)
-      parameters:
-        - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
+      summary: Add envelopes and tombstones (wallet proof). A known id is ignored, except that a tombstone replaces an envelope and deletes its ciphertext
+      parameters: [ { $ref: '#/components/parameters/proofAddress' }, { $ref: '#/components/parameters/proofChallenge' }, { $ref: '#/components/parameters/proof' } ]
       requestBody:
         required: true
-        content: { application/json: { schema: { type: array, maxItems: 500, items: { $ref: 'https://aeilus.institute/schema/vledger/1/wallet.schema.json#/$defs/envelope' } } } }
+        content: { application/json: { schema: { type: array, maxItems: 500, items: { type: object } } } }
       responses:
-        '204': { description: Appended }
-        '409': { $ref: '#/components/responses/problem' }
+        '200': { description: Result, content: { application/json: { schema: { type: object, properties: { added: { type: integer }, erased: { type: integer } } } } } }
         '413': { $ref: '#/components/responses/problem' }
-  /wallets/{walletId}/records/{recordId}:
-    parameters:
-      - { $ref: '#/components/parameters/walletId' }
-      - { name: recordId, in: path, required: true, schema: { type: string } }
-    put:
-      summary: Erase - replace an envelope with its tombstone. The provider MUST delete the ciphertext and wrapped key
-      requestBody: { required: true, content: { application/json: { schema: { $ref: 'https://aeilus.institute/schema/vledger/1/wallet.schema.json#/$defs/tombstone' } } } }
+  /wallets/{walletId}/notices:
+    parameters: [ { $ref: '#/components/parameters/walletId' } ]
+    get:
+      summary: Pending events the holder's devices must show, such as a recovery request in progress
       responses:
-        '204': { description: Erased }
-        '422': { $ref: '#/components/responses/problem' }
+        '200':
+          description: Notices
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: object, properties: { kind: { const: recovery-request }, requestId: { type: string }, createdAt: { type: string }, readyAfter: { type: string } } }
   /recovery:
     get:
-      summary: The provider's recovery offer (SPEC 4.4) - public key and the published procedure
+      summary: The provider's recovery offer (SPEC 4.4). Absent (404) if the provider does not offer recovery
       security: []
       responses:
         '200':
-          description: Recovery offer
+          description: Offer
           content:
             application/json:
               schema:
                 type: object
-                required: [providerId, keyId, publicJwk, procedureUrl, delayDays, notifies]
+                required: [providerId, keyId, publicJwk, procedureUrl, delayDays, notifies, canRead]
                 properties:
                   providerId: { type: string }
                   keyId: { type: string }
                   publicJwk: { $ref: 'https://aeilus.institute/schema/vledger/1/common.schema.json#/$defs/ecJwk' }
-                  procedureUrl: { type: string, format: uri }
-                  delayDays: { type: integer, minimum: 0 }
+                  procedureUrl: { type: string }
+                  delayDays: { type: number, minimum: 0 }
                   notifies: { type: array, items: { enum: [devices, email, contacts] } }
-                  minimumAge: { type: integer, description: 'For example 18 (TZ D-7)' }
+                  minimumAge: { type: integer }
+                  canRead: { const: true, description: 'In this mode the provider can technically read the wallet; wallets must say so' }
+  /recovery/requests:
+    post:
+      summary: Ask to recover access. The client sends a fresh ephemeral ECDH public key; the DEK will be released to it only
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [walletId, slotId, clientEpk]
+              properties:
+                walletId: { type: string }
+                slotId: { type: string }
+                clientEpk: { $ref: 'https://aeilus.institute/schema/vledger/1/common.schema.json#/$defs/ecJwk' }
+                contact: { type: string, description: 'How the provider reaches the person for the identity check' }
+      responses:
+        '202': { description: Accepted, content: { application/json: { schema: { type: object, properties: { requestId: { type: string }, readyAfter: { type: string } } } } } }
+        '404': { $ref: '#/components/responses/problem' }
+  /recovery/requests/{requestId}:
+    parameters: [ { name: requestId, in: path, required: true, schema: { type: string } } ]
+    get:
+      summary: |
+        Status. When the procedure is complete (identity checked, delay over, not cancelled) the provider opens the
+        recovery slot with its key and returns the DEK wrapped to `clientEpk`: ECDH(provider ephemeral, clientEpk),
+        HKDF-SHA-256 (salt 32 zero bytes, info `aevri.vledger/1|recovery-release|<requestId>`), AES-256-GCM with AAD equal
+        to the same info string. The release is given once, then the request is closed.
+      responses:
+        '200':
+          description: Status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { enum: [waiting, ready, released, cancelled] }
+                  readyAfter: { type: string }
+                  release: { type: object, properties: { epk: { type: object }, iv: { type: string }, ct: { type: string } } }
+    delete:
+      summary: Cancel a pending recovery (wallet proof, from any of the holder's devices)
+      parameters: [ { $ref: '#/components/parameters/proofAddress' }, { $ref: '#/components/parameters/proofChallenge' }, { $ref: '#/components/parameters/proof' } ]
+      responses:
+        '204': { description: Cancelled }
 components:
   parameters:
     walletId: { name: walletId, in: path, required: true, schema: { type: string } }
+    proofAddress: { name: X-Vledger-Address, in: header, required: true, schema: { type: string } }
+    proofChallenge: { name: X-Vledger-Challenge, in: header, required: true, schema: { type: string } }
+    proof: { name: X-Vledger-Proof, in: header, required: true, schema: { type: string } }
   responses:
     problem:
       description: Error
-      content: { application/problem+json: { schema: { type: object, properties: { type: { type: string }, title: { type: string }, code: { type: string }, traceId: { type: string } } } } }
+      content: { application/problem+json: { schema: { type: object, properties: { type: { type: string }, title: { type: string }, code: { type: string } } } } }

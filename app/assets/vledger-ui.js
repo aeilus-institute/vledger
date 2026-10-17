@@ -2,7 +2,8 @@
 // Timeline of events "someone did something with something or someone", contacts with addresses and QR,
 // value systems and goals, assessments with references and spent value, inbox, analytics, settings.
 
-import { Wallet, device, passphraseOk, inspectImport } from './vledger-store.js';
+import { Wallet, device, passphraseOk, inspectImport, pendingRecovery } from './vledger-store.js';
+import { makeProvider, restoreCode, parseRestoreCode, AEVRI_URL } from './vledger-providers.js';
 import * as V from './vledger-value.js';
 import * as C from './vledger-crypto.js';
 import { qrSvg } from './vledger-qr.js';
@@ -15,6 +16,8 @@ let tab = 'timeline';
 let filters = { system: '', role: '', contact: '' };
 let period = '90';
 let idleTimer = null;
+let notices = []; // pending recovery requests reported by providers on sync
+let syncing = false;
 const IDLE_MS = 15 * 60 * 1000;
 
 // ---- i18n ----
@@ -44,7 +47,7 @@ function h(tag, attrs = {}, ...kids) {
     else if (v === true) el.setAttribute(k, '');
     else el.setAttribute(k, v);
   }
-  for (const kid of kids.flat()) if (kid !== null && kid !== undefined && kid !== false) el.append(kid instanceof Node ? kid : String(kid));
+  for (const kid of kids.flat(Infinity)) if (kid !== null && kid !== undefined && kid !== false) el.append(kid instanceof Node ? kid : String(kid));
   return el;
 }
 
@@ -114,6 +117,7 @@ function touch() {
 function lockNow() {
   if (wallet) wallet.lock();
   wallet = null;
+  notices = [];
   render();
 }
 
@@ -190,9 +194,17 @@ async function renderStart() {
         h('button', { class: 'vw-btn', onclick: () => unlockDialog(w.walletId, w.label) }, t('start.open'))));
     }
   }
+  const pend = await guard(() => pendingRecovery.list()) || [];
+  if (pend.length) {
+    box.append(h('h2', {}, t('fg.pending')));
+    for (const rq of pend) box.append(h('div', { class: 'vw-card vw-row' }, h('span', {}, t('fg.pendingLine', { ready: (rq.readyAfter || '').replace('T', ' ').slice(0, 16) })),
+      h('button', { class: 'vw-btn', onclick: () => checkRecovery(rq) }, t('fg.check'))));
+  }
   box.append(h('div', { class: 'vw-actions' },
     h('button', { class: 'vw-btn vw-primary', onclick: createDialog }, t('start.create')),
-    h('button', { class: 'vw-btn', onclick: importDialog }, t('start.import'))));
+    h('button', { class: 'vw-btn', onclick: importDialog }, t('start.import')),
+    h('button', { class: 'vw-btn', onclick: restoreDialog }, t('rs.title')),
+    h('button', { class: 'vw-btn vw-ghost', onclick: forgotDialog }, t('fg.title'))));
   return box;
 }
 
@@ -206,7 +218,7 @@ function unlockDialog(walletId, label, doc) {
       try {
         wallet = await Wallet.unlock(doc || await device.get(walletId), pass.value);
         pass.value = '';
-        close(true); touch(); render();
+        close(true); touch(); render(); syncAll(true);
       } catch { msg.textContent = t('unlock.wrong'); btn.disabled = false; }
     } }, field(t('unlock.pass'), pass), msg, h('div', { class: 'vw-actions' }, btn));
   });
@@ -258,6 +270,199 @@ async function importDialog() {
   if (wallet && wallet.id === doc.walletId) { await wallet.save(); toast(t('import.saved')); render(); }
 }
 
+// ---- providers and sync (L2) ----
+
+async function syncAll(quiet = false) {
+  if (!wallet || syncing) return;
+  const list = wallet.providers();
+  if (!list.length) return;
+  syncing = true;
+  const found = [];
+  let errors = 0;
+  for (const cfg of list) {
+    try {
+      const r = await wallet.syncWith(cfg);
+      found.push(...r.notices.map((n) => ({ ...n, cfg })));
+    } catch (e) { console.warn(e); errors++; }
+  }
+  syncing = false;
+  notices = found;
+  if (!quiet || errors || found.length) toast(errors ? t('pv.syncErrors', { n: errors }) : t('pv.synced'));
+  render();
+}
+
+function providerLabel(cfg) {
+  if (cfg.kind === 'aevri') return t('pv.kind.aevri');
+  if (cfg.kind === 'github') return `GitHub ${cfg.config.owner}/${cfg.config.repo}`;
+  return cfg.url;
+}
+
+function noticeBanner() {
+  if (!notices.length) return null;
+  return h('div', { class: 'vw-card vw-alert', role: 'alert' }, notices.map((n) => h('div', {},
+    h('strong', {}, t('pv.noticeTitle')), h('p', {}, t('pv.notice', { at: n.createdAt.replace('T', ' ').slice(0, 16), ready: n.readyAfter.replace('T', ' ').slice(0, 16), where: providerLabel(n.cfg) })),
+    h('button', { class: 'vw-btn vw-danger', onclick: async () => {
+      await guard(() => makeProvider(n.cfg).cancelRecovery(n.requestId, wallet.session));
+      notices = notices.filter((x) => x.requestId !== n.requestId);
+      toast(t('pv.cancelled')); render();
+    } }, t('pv.cancelRecovery')))));
+}
+
+function providerDialog() {
+  return modal(t('pv.addTitle'), (close) => {
+    const kind = select([['aevri', t('pv.kind.aevri')], ['github', t('pv.kind.github')], ['custom', t('pv.kind.custom')]], 'aevri');
+    const url = h('input', { type: 'url', placeholder: 'https://', value: '' });
+    const owner = h('input', { type: 'text', placeholder: 'owner' });
+    const repo = h('input', { type: 'text', placeholder: 'private-repo' });
+    const branch = h('input', { type: 'text', value: 'main' });
+    const token = h('input', { type: 'password', autocomplete: 'off', placeholder: 'github_pat_...' });
+    const age = h('input', { type: 'checkbox' });
+    const boxA = h('div', {}, h('p', { class: 'vw-hint' }, t('pv.aevriHint')), h('label', { class: 'vw-check' }, age, h('span', {}, t('pv.age'))));
+    const boxG = h('div', { hidden: true }, h('p', { class: 'vw-hint' }, t('pv.githubHint')),
+      h('div', { class: 'vw-inline' }, field(t('pv.owner'), owner), field(t('pv.repo'), repo), field(t('pv.branch'), branch)),
+      field(t('pv.token'), token, t('pv.tokenHint')));
+    const boxC = h('div', { hidden: true }, field(t('pv.url'), url, t('pv.urlHint')));
+    kind.addEventListener('change', () => { boxA.hidden = kind.value !== 'aevri'; boxG.hidden = kind.value !== 'github'; boxC.hidden = kind.value !== 'custom'; });
+    const msg = h('p', { class: 'vw-error', role: 'alert' });
+    const btn = h('button', { class: 'vw-btn vw-primary', type: 'submit' }, t('pv.addGo'));
+    return h('form', { onsubmit: async (e) => {
+      e.preventDefault();
+      const id = 'p-' + Date.now().toString(36);
+      let cfg;
+      if (kind.value === 'aevri') {
+        if (!age.checked) { msg.textContent = t('pv.ageNeeded'); return; }
+        cfg = { id, kind: 'aevri', url: AEVRI_URL, ageConfirmed: true };
+      } else if (kind.value === 'github') {
+        if (!owner.value.trim() || !repo.value.trim() || !token.value.trim()) { msg.textContent = t('pv.githubNeed'); return; }
+        cfg = { id, kind: 'github', config: { owner: owner.value.trim(), repo: repo.value.trim(), branch: branch.value.trim() || 'main', token: token.value.trim() } };
+      } else {
+        if (!/^https:\/\/|^http:\/\/127\.0\.0\.1|^http:\/\/localhost/.test(url.value)) { msg.textContent = t('pv.urlNeed'); return; }
+        cfg = { id, kind: 'custom', url: url.value.trim().replace(/\/$/, '') };
+      }
+      btn.disabled = true; msg.textContent = t('pv.connecting');
+      try {
+        await wallet.syncWith(cfg);
+        await wallet.saveProvider(cfg);
+        token.value = '';
+        close(true); toast(t('pv.added')); render();
+      } catch (err) { msg.textContent = t('pv.failed', { msg: err.message }); btn.disabled = false; }
+    } }, field(t('pv.kind'), kind), boxA, boxG, boxC, msg, h('div', { class: 'vw-actions' }, btn));
+  });
+}
+
+function providersSection() {
+  const list = wallet.providers();
+  const last = wallet.doc.extensions.lastSync || {};
+  return [
+    h('h2', {}, t('set.storage')), h('p', { class: 'vw-hint' }, t('pv.lead')),
+    list.length ? list.map((cfg) => h('article', { class: 'vw-card' },
+      h('div', { class: 'vw-row' }, h('strong', {}, providerLabel(cfg)), h('span', { class: 'vw-muted vw-small' }, last[cfg.id] ? t('pv.last', { at: last[cfg.id].replace('T', ' ').slice(0, 16) }) : t('pv.never'))),
+      h('p', { class: 'vw-small' }, t('pv.code'), ' ', h('code', { class: 'vw-addr' }, restoreCode(cfg, wallet.id))),
+      cfg.recovery ? h('p', { class: 'vw-flag' }, t('pv.recoveryOn')) : null,
+      h('div', { class: 'vw-actions' },
+        h('button', { class: 'vw-btn', onclick: async () => { const r = await guard(() => wallet.syncWith(cfg)); if (r) { notices = r.notices.map((n) => ({ ...n, cfg })); toast(t('pv.syncResult', { up: r.up, down: r.down })); render(); } } }, t('pv.syncNow')),
+        h('button', { class: 'vw-btn vw-ghost', onclick: async () => { try { await navigator.clipboard.writeText(restoreCode(cfg, wallet.id)); toast(t('copied')); } catch { prompt(t('ct.copyManual'), restoreCode(cfg, wallet.id)); } } }, t('pv.copyCode')),
+        cfg.kind !== 'github' ? (cfg.recovery
+          ? h('button', { class: 'vw-btn vw-ghost', onclick: async () => { if (confirm(t('pv.recoveryOffConfirm'))) { await guard(() => wallet.disableRecovery(cfg)); toast(t('pv.recoveryOff')); render(); } } }, t('pv.recoveryOffBtn'))
+          : h('button', { class: 'vw-btn vw-ghost', onclick: () => recoveryDialog(cfg) }, t('pv.recoveryOnBtn'))) : null,
+        h('button', { class: 'vw-btn vw-ghost vw-danger', onclick: async () => {
+          if (!confirm(t('pv.removeConfirm'))) return;
+          if (await guard(() => makeProvider(cfg).deleteWallet(wallet.id, wallet.session))) { await wallet.removeProviderConfig(cfg.id); toast(t('pv.removed')); render(); }
+        } }, t('pv.remove'))))) : h('p', { class: 'vw-muted' }, t('pv.none')),
+    h('div', { class: 'vw-actions' }, h('button', { class: 'vw-btn vw-primary', onclick: providerDialog }, t('pv.add'))),
+    h('p', { class: 'vw-hint' }, t('set.storageHint')),
+  ];
+}
+
+async function recoveryDialog(cfg) {
+  const offer = await guard(() => makeProvider(cfg).recoveryOffer());
+  if (!offer) { toast(t('pv.noOffer')); return; }
+  return modal(t('pv.recoveryTitle'), (close) => {
+    const ack = h('input', { type: 'checkbox' });
+    const msg = h('p', { class: 'vw-error', role: 'alert' });
+    return h('form', { onsubmit: async (e) => {
+      e.preventDefault();
+      if (!ack.checked) { msg.textContent = t('create.ackNeeded'); return; }
+      if (await guard(() => wallet.enableRecovery(cfg))) { close(true); toast(t('pv.recoveryEnabled')); render(); }
+    } },
+    h('p', {}, t('pv.recoveryExplain', { days: Math.round(offer.delayDays * 10) / 10, notify: offer.notifies.map((x) => t('pv.notify.' + x)).join(', ') })),
+    h('p', { class: 'vw-flag' }, t('pv.canRead')),
+    h('p', { class: 'vw-small' }, h('a', { href: offer.procedureUrl, target: '_blank', rel: 'noopener' }, t('pv.procedure'))),
+    h('label', { class: 'vw-check' }, ack, h('span', {}, t('pv.recoveryAck'))), msg, submitRow(t('pv.recoveryOnBtn')));
+  });
+}
+
+// Start screen: restore a copy, or recover a forgotten passphrase through a provider
+function restoreDialog() {
+  return modal(t('rs.title'), (close) => {
+    const code = h('input', { type: 'text', placeholder: 'aevri:https://...#...' });
+    const token = h('input', { type: 'password', autocomplete: 'off', placeholder: t('rs.tokenPh') });
+    const pass = h('input', { type: 'password', autocomplete: 'current-password' });
+    const msg = h('p', { class: 'vw-error', role: 'alert' });
+    const btn = h('button', { class: 'vw-btn vw-primary', type: 'submit' }, t('rs.go'));
+    return h('form', { onsubmit: async (e) => {
+      e.preventDefault();
+      const rc = parseRestoreCode(code.value);
+      if (!rc) { msg.textContent = t('rs.badCode'); return; }
+      if (rc.kind === 'github') rc.config.token = token.value.trim();
+      btn.disabled = true; msg.textContent = t('unlock.wait');
+      try {
+        wallet = await Wallet.restore(rc, rc.walletId, pass.value);
+        pass.value = '';
+        const cfg = { id: 'p-' + Date.now().toString(36), ...rc };
+        delete cfg.walletId;
+        if (!wallet.providers().some((x) => restoreCode(x, wallet.id) === restoreCode(cfg, wallet.id))) await wallet.saveProvider(cfg);
+        close(true); touch(); toast(t('rs.done')); render();
+      } catch (err) { msg.textContent = t('rs.failed', { msg: err.message }); btn.disabled = false; }
+    } }, field(t('rs.code'), code, t('rs.codeHint')), field(t('rs.token'), token, t('rs.tokenHint')), field(t('unlock.pass'), pass), msg, h('div', { class: 'vw-actions' }, btn));
+  });
+}
+
+function forgotDialog() {
+  return modal(t('fg.title'), (close) => {
+    const code = h('input', { type: 'text', placeholder: 'aevri:https://...#...' });
+    const contact = h('input', { type: 'text', maxlength: 200 });
+    const msg = h('p', { class: 'vw-error', role: 'alert' });
+    return h('form', { onsubmit: async (e) => {
+      e.preventDefault();
+      const rc = parseRestoreCode(code.value);
+      if (!rc || rc.kind === 'github') { msg.textContent = t('fg.badCode'); return; }
+      try {
+        const p = makeProvider(rc);
+        const kr = await p.getKeyring(rc.walletId);
+        const slot = kr?.slots.find((x) => x.kind === 'provider-recovery');
+        if (!slot) { msg.textContent = t('fg.noSlot'); return; }
+        const r = await p.requestRecovery(rc.walletId, slot.id, contact.value.trim());
+        await pendingRecovery.put({ requestId: r.requestId, walletId: rc.walletId, cfg: { kind: rc.kind, url: rc.url }, privateKey: r.privateKey, readyAfter: r.readyAfter, createdAt: new Date().toISOString() });
+        close(true); toast(t('fg.filed', { ready: r.readyAfter.replace('T', ' ').slice(0, 16) })); render();
+      } catch (err) { msg.textContent = t('rs.failed', { msg: err.message }); }
+    } }, h('p', {}, t('fg.lead')), field(t('rs.code'), code, t('rs.codeHint')), field(t('fg.contact'), contact, t('fg.contactHint')), msg, submitRow(t('fg.go')));
+  });
+}
+
+async function checkRecovery(rq) {
+  const r = await guard(() => makeProvider(rq.cfg).pollRecovery(rq.requestId, rq.privateKey));
+  if (!r) return;
+  if (r.status === 'cancelled' || r.status === 'released' || r.status === 'unknown') { await pendingRecovery.remove(rq.requestId); toast(t('fg.status.' + r.status)); render(); return; }
+  if (r.status !== 'ready') { toast(t('fg.waiting', { ready: (r.readyAfter || '').replace('T', ' ').slice(0, 16) })); return; }
+  await modal(t('fg.newTitle'), (close) => {
+    const p1 = h('input', { type: 'password', autocomplete: 'new-password' });
+    const p2 = h('input', { type: 'password', autocomplete: 'new-password' });
+    const msg = h('p', { class: 'vw-error', role: 'alert' });
+    return h('form', { onsubmit: async (e) => {
+      e.preventDefault();
+      if (!passphraseOk(p1.value)) { msg.textContent = t('create.weak'); return; }
+      if (p1.value !== p2.value) { msg.textContent = t('create.mismatch'); return; }
+      msg.textContent = t('create.wait');
+      wallet = await guard(() => Wallet.recoverWithDek(rq.cfg, rq.walletId, r.dek, p1.value));
+      p1.value = p2.value = '';
+      await pendingRecovery.remove(rq.requestId);
+      notices = [];
+      if (wallet) { await wallet.save(); close(true); touch(); toast(t('fg.recovered')); render(); }
+    } }, h('p', {}, t('fg.newLead')), field(t('create.pass'), p1, t('create.passHint')), field(t('create.pass2'), p2), msg, submitRow());
+  });
+}
+
 // ---- tabs ----
 
 const TABS = ['timeline', 'contacts', 'systems', 'analytics', 'inbox', 'settings'];
@@ -268,7 +473,7 @@ function renderWallet() {
     h('button', { role: 'tab', 'aria-selected': String(tab === k), class: tab === k ? 'is-on' : '', onclick: () => { tab = k; render(); } },
       t('tab.' + k), k === 'inbox' && inboxCount ? h('span', { class: 'vw-badge' }, String(inboxCount)) : null)));
   const body = { timeline: tabTimeline, contacts: tabContacts, systems: tabSystems, analytics: tabAnalytics, inbox: tabInbox, settings: tabSettings }[tab]();
-  return h('div', {}, nav, h('section', { class: 'vw-panel', role: 'tabpanel' }, body));
+  return h('div', {}, noticeBanner(), nav, h('section', { class: 'vw-panel', role: 'tabpanel' }, body));
 }
 
 // ---- timeline ----
@@ -1048,7 +1253,8 @@ function tabSettings() {
     h('h2', {}, t('set.types')),
     types.map((x) => h('div', { class: 'vw-row' }, h('span', {}, `${x.body.name} · ${t('cat.' + x.body.category)}`), itemMenu(x))),
     h('button', { class: 'vw-btn', onclick: typeDialog }, t('set.addType')),
-    h('h2', {}, t('set.storage')), h('p', { class: 'vw-hint' }, t('set.storageHint')),
+    providersSection(),
+    h('h3', {}, t('set.files')),
     h('div', { class: 'vw-actions' },
       h('button', { class: 'vw-btn', onclick: () => download(`${slug(wallet.doc.extensions.label)}_${today()}.vledger.json`, wallet.exportEncrypted()) }, t('set.exportEnc')),
       h('button', { class: 'vw-btn', onclick: () => { if (confirm(t('set.readableWarn'))) download(`${slug(wallet.doc.extensions.label)}_${today()}_READABLE.json`, wallet.exportReadable()); } }, t('set.exportRead')),

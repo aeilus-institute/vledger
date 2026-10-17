@@ -933,11 +933,52 @@
                   "custom"
                 ]
               },
+              "id": {
+                "type": "string",
+                "maxLength": 60
+              },
               "label": {
                 "type": "string"
               },
               "url": {
                 "type": "string"
+              },
+              "config": {
+                "type": "object",
+                "properties": {
+                  "owner": {
+                    "type": "string"
+                  },
+                  "repo": {
+                    "type": "string"
+                  },
+                  "branch": {
+                    "type": "string"
+                  },
+                  "token": {
+                    "type": "string"
+                  },
+                  "apiBase": {
+                    "type": "string"
+                  }
+                }
+              },
+              "recovery": {
+                "type": "object",
+                "properties": {
+                  "slotId": {
+                    "type": "string"
+                  },
+                  "keyId": {
+                    "type": "string"
+                  }
+                }
+              },
+              "lastSync": {
+                "$ref": "common.schema.json#/$defs/time"
+              },
+              "ageConfirmed": {
+                "type": "boolean"
               }
             }
           }

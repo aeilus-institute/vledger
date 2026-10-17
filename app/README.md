@@ -1,4 +1,4 @@
-# Value Wallet app - stage L1 (local wallet), format aevri.vledger 1.0-d2
+# Value Wallet app - stages L1 and L2, format aevri.vledger 1.0-d3
 
 Branch `l1-wallet`. Requirements: `docs/VLEDGER/AEILUS_VLedger_TZ_v0.3.md` in the portfolio (with v0.2 for what v0.3
 does not replace). Format: `../spec/SPEC.md` (1.0-d2).
@@ -75,7 +75,34 @@ Then open `http://127.0.0.1:8791/app/` and `http://127.0.0.1:8791/app/tests/self
 (`encoder.py`, `write_padding_bits`), which ISO/IEC 18004 7.4.10 does not ask for. Both forms decode. The app follows
 the standard; the cross-check test turns on `segnoQuirk` to compare module by module.
 
-## Not in L1
+## L2: providers, sync, recovery (2026-10-17)
 
-Backup providers and recovery (L2); the institute relay, receipts with arbiters in the UI, public registries online
+- `assets/vledger-providers.js`: `HttpProvider` (the open provider protocol, `spec/openapi/provider.yaml`: wallet proof for
+  writes, cursors, notices, recovery request / poll / cancel) and `GitHubProvider` (a private repository of the holder,
+  contents API, token kept inside the encrypted wallet); restore codes `<kind>:<location>#<walletId>`.
+- Wallet model: `syncWith` (keyring up or adopted, envelopes and tombstones both ways, chain rebuilt per device),
+  `restore`, `enableRecovery` / `disableRecovery`, `recoverWithDek`; last sync time is device-local metadata.
+- UI: Settings, "Copies at providers" (ÆVRI with the 18+ confirmation, GitHub, any compatible server; sync now, restore
+  code, recovery on / off with the plain warning that the provider can then read the wallet, delete the copy there);
+  start screen "Restore from a copy" and "I forgot my passphrase" (request, pending list kept with a non-extractable
+  key, check, new passphrase); a red notice on every device when someone files a recovery request, with "This was not
+  me: cancel". Sync runs on unlock and on demand.
+- `spec/tools/provider_server.py`: reference provider (and a GitHub contents API mock in `--test` mode).
+- `tests/l2test.html`: 23 checks against the reference provider (run it with
+  `python spec/tools/provider_server.py 8793 --delay 1 --test`): first copy, no plain text at the provider (full dump),
+  limited metadata, restore on a second device, sync both ways, erasure propagation, passphrase change adopted,
+  writes refused without the wallet key, GitHub copy and restore, migration with completeness check and deletion,
+  recovery notice, cancel, no release before the procedure, release once, new passphrase, recovery off, no plain text
+  in any of about 165 request bodies, requests only to chosen providers.
+- Manual run in Russian: provider added and first copy made; recovery turned on; "I forgot my passphrase" filed; the
+  holder's device showed the notice; no release before the check; after it a new passphrase opened the wallet and the
+  old one did not.
+- Found and fixed: CSP blocked provider requests (connect-src now allows https and local servers); a nested array in
+  the DOM helper; credentials sent cross-site; sync wrote a settings version every time (now local metadata).
+- Not done: the ÆVRI provider server itself (PHP on the Bitrix site; there is no PHP on this workstation, so it is
+  written and tested at deployment with the owner's yes); a live GitHub test (needs the owner's token).
+
+## Not in L1 and L2
+
+The institute relay, receipts with arbiters in the UI, public registries online
 (L3); VET and VSS (L4); native apps and the device / agent API (L5).

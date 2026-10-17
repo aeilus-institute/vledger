@@ -399,3 +399,16 @@ export function requestBlocked(settings, body, from, contacts = [], systems = []
   return named.some((x) => (body.systemRegistryUrl && x.body.registryUrl === body.systemRegistryUrl)
     || (body.system && x.body.title.toLowerCase() === String(body.system).toLowerCase()));
 }
+
+// A session from a DEK obtained by provider recovery (SPEC 4.4); the caller must then set a new passphrase slot.
+export function unlockWithDek(doc, dek) { return sessionFromDek(doc, dek); }
+
+// Rebuild a wallet document from a provider's keyring and record set, in the provider's order (SPEC 8).
+export async function rebuildDoc(walletId, createdAt, keyring, items) {
+  const doc = { format: FORMAT, version: VERSION, walletId, createdAt, keyring, records: [], extensions: {} };
+  for (const it of items) {
+    const prevHash = doc.records.length ? await hashJson(linkOf(doc.records[doc.records.length - 1])) : await hashJson({ walletId, createdAt });
+    doc.records.push({ ...it, seq: doc.records.length + 1, prevHash });
+  }
+  return doc;
+}

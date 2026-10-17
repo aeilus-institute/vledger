@@ -1,8 +1,11 @@
 # Value Wallet format and protocols - `aevri.vledger` 1.0
 
-Status: **draft 1.0-d2** (2026-10-17). Editor: Aeilus Value Research Institute (ÆVRI).
+Status: **draft 1.0-d3** (2026-10-17). Editor: Aeilus Value Research Institute (ÆVRI).
 Licence: CC BY 4.0 (this text), MIT (reference code and schemas). Requirements (Russian): TZ v0.2 and v0.3.
 Fixtures in `fixtures/` are produced by `reference/` (Web Crypto) and pass the independent `tools/verify_fixtures.py`.
+Changes from d2 (stage L2): storage providers keep envelopes as a set and each device rebuilds its chain; restore
+codes; the GitHub layout; wallet-proof authentication; the recovery request, notice, cancel and release protocol;
+`settings.providers[].config`. Records are unchanged, so d2 fixtures stay valid.
 Changes from d1: the exchange became an **event on a timeline** (actor, action, objects, affected contacts);
 counterparties became **contacts with wallet addresses**; **value systems** group goals; assessments gained **spent
 value**, **efficiency** and **reference** marks, and phases are `realized` and `retro` (expectations are plans);
@@ -89,6 +92,14 @@ Ephemeral P-256 key pair; ECDH with the provider's public key; HKDF-SHA-256 with
 `aevri.vledger/1|recovery|<walletId>|<keyId>`; AES-GCM wrap of the DEK (purpose `slot`). Stored as
 `{id, kind: "provider-recovery", providerId, keyId, epk, wrap}`.
 
+**Recovery protocol** (`openapi/provider.yaml`): a device that lost the passphrase creates a fresh ephemeral P-256 key
+and files a recovery request with the wallet id, the slot id and that public key. The provider shows the request as a
+**notice** to every device that syncs the wallet; any of them can **cancel** it with a wallet proof. After the
+provider's procedure (identity check, delay, notifications) it opens the slot with its private key and **releases**
+the DEK wrapped to the request's key (ECDH with a provider ephemeral key, HKDF-SHA-256 with info
+`aevri.vledger/1|recovery-release|<requestId>`, AES-256-GCM with the same string as AAD), once. The device then
+replaces the passphrase slot with one for a new passphrase and uploads the keyring.
+
 ## 5. Records
 
 ### 5.1. Envelope, chain, tombstone
@@ -153,8 +164,27 @@ Never reminders.
 
 ## 8. Storage providers
 
-`openapi/provider.yaml`: ciphertext only; migration by copying and verifying; sync by exchanging missing ids and
-rebasing.
+`openapi/provider.yaml`. A provider keeps the keyring and the envelopes and tombstones **as a set**, in its own
+order; it never needs plain text. Each device keeps its own chain (5.1): when it takes in envelopes from a provider it
+appends them after its own records and recomputes `seq` and `prevHash` for them (ciphertexts and ids do not change).
+A device restoring a wallet from a provider rebuilds the whole chain in the provider's order.
+
+- **Sync** with a provider: upload the keyring if the provider has none or an older revision, adopt the provider's
+  keyring if it has a newer revision (passphrase changed on another device; the DEK is the same), upload envelopes and
+  tombstones the provider lacks, take in those the device lacks, and apply tombstones both ways.
+- **Several providers** MAY be used at once; each sync is independent.
+- **Migration**: sync the new provider, verify that it lists every id, then (only after the holder confirms) delete
+  the wallet at the old one.
+- **Restore code**: what a new device needs to find a copy, `<provider kind>:<location>#<walletId>`, for example
+  `aevri:https://aeilus.institute/api/v1/vledger#<walletId>` or `github:<owner>/<repo>#<walletId>`. The wallet id is a
+  random capability for reading ciphertext; it is not a secret that opens anything.
+- **Wallet proof** for writes: the provider binds the wallet id to the address of the first uploaded keyring; later
+  writes sign a fresh challenge with the identity key.
+- **GitHub layout** (a private repository the holder owns, accessed with the holder's fine-grained token that is
+  stored only inside the encrypted wallet): `vledger/<walletId>/wallet.json` (`{walletId, createdAt, keyring}`) and
+  `vledger/<walletId>/records/<id>.json` (one envelope or tombstone per file). An erasure overwrites the record file
+  with its tombstone; the repository history still holds the old ciphertext, which stays unreadable without the key
+  (the wallet tells the holder this).
 
 ## 9. Event receipts (peer agreement)
 

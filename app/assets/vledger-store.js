@@ -2,6 +2,7 @@
 // No DOM. The wallet document is always stored encrypted; decrypted payloads live in memory only while unlocked.
 
 import * as C from './vledger-crypto.js';
+import { makeProvider } from './vledger-providers.js';
 
 export const MIN_PASSPHRASE = 14;
 
@@ -16,18 +17,21 @@ const DB = 'aevri-vledger';
 
 function idb() {
   return new Promise((resolve, reject) => {
-    const r = indexedDB.open(DB, 1);
-    r.onupgradeneeded = () => r.result.createObjectStore('wallets');
+    const r = indexedDB.open(DB, 2);
+    r.onupgradeneeded = () => {
+      if (!r.result.objectStoreNames.contains('wallets')) r.result.createObjectStore('wallets');
+      if (!r.result.objectStoreNames.contains('recovery')) r.result.createObjectStore('recovery');
+    };
     r.onsuccess = () => resolve(r.result);
     r.onerror = () => reject(r.error);
   });
 }
 
-async function tx(mode, fn) {
+async function tx(mode, fn, storeName = 'wallets') {
   const db = await idb();
   return new Promise((resolve, reject) => {
-    const t = db.transaction('wallets', mode);
-    const out = fn(t.objectStore('wallets'));
+    const t = db.transaction(storeName, mode);
+    const out = fn(t.objectStore(storeName));
     t.oncomplete = () => { db.close(); resolve(out && 'result' in out ? out.result : undefined); };
     t.onerror = () => { db.close(); reject(t.error); };
   });
@@ -41,6 +45,13 @@ export const device = {
   get: (id) => tx('readonly', (s) => s.get(id)),
   put: (doc) => tx('readwrite', (s) => s.put(doc, doc.walletId)),
   remove: (id) => tx('readwrite', (s) => s.delete(id)),
+};
+
+// Pending recovery requests on this device: {requestId, walletId, cfg, privateKey (non-extractable CryptoKey)}.
+export const pendingRecovery = {
+  list: () => tx('readonly', (s) => s.getAll(), 'recovery').then((x) => x || []),
+  put: (r) => tx('readwrite', (s) => s.put(r, r.requestId), 'recovery'),
+  remove: (id) => tx('readwrite', (s) => s.delete(id), 'recovery'),
 };
 
 // ---- wallet ----
@@ -281,6 +292,96 @@ export class Wallet {
   async setMessageState(rootId, state) {
     const m = this.get(rootId);
     return this.correct(rootId, { ...m.body, state });
+  }
+
+  // ---- L2: providers, sync, recovery (SPEC 4.4, 8) ----
+
+  providers() { return (this.settings().providers || []).filter((p) => p.kind !== 'device' && p.kind !== 'file'); }
+
+  async saveProvider(cfg) {
+    const cur = this.settings();
+    const list = (cur.providers || []).filter((p) => p.id !== cfg.id);
+    list.push(cfg);
+    await this.saveSettings({ ...cur, providers: list });
+  }
+
+  async removeProviderConfig(id) {
+    const cur = this.settings();
+    await this.saveSettings({ ...cur, providers: (cur.providers || []).filter((p) => p.id !== id) });
+  }
+
+  // Two-way sync with one provider. Returns {up, down, erased, keyring, notices}.
+  async syncWith(cfg, provider = makeProvider(cfg)) {
+    const id = this.id;
+    let keyringAction = 'same';
+    const remote = await provider.getKeyring(id);
+    if (!remote || remote.revision < this.doc.keyring.revision) {
+      await provider.putKeyring(this.doc, this.session);
+      keyringAction = 'uploaded';
+    } else if (remote.revision > this.doc.keyring.revision) {
+      // Newer keyring from another device (for example a new passphrase): adopt it if it holds our DEK.
+      await C.open(this.session.dek, remote.identity.wrap, 'identity', id, 'identity');
+      this.doc.keyring = remote;
+      await this.save();
+      keyringAction = 'adopted';
+    }
+    const items = await provider.list(id);
+    const theirs = new Map(items.map((r) => [r.id, r]));
+    const merged = await this.merge({ walletId: id, records: items });
+    const toSend = this.doc.records.filter((r) => !theirs.has(r.id) || (r.erased && !theirs.get(r.id).erased));
+    if (toSend.length) await provider.append(id, toSend.map((r) => ({ ...r })), this.session);
+    const notices = provider.notices ? await provider.notices(id) : [];
+    // Last sync time is device-local metadata (never uploaded: providers receive only the keyring and records).
+    if (cfg.id) { this.doc.extensions.lastSync = { ...(this.doc.extensions.lastSync || {}), [cfg.id]: C.nowIso() }; await this.save(); }
+    return { up: toSend.length, down: merged.added, erased: merged.erased, keyring: keyringAction, notices };
+  }
+
+  // Add a provider-recovery slot for a provider that offers recovery (TZ D-9), then sync the keyring.
+  async enableRecovery(cfg, provider = makeProvider(cfg)) {
+    const offer = await provider.recoveryOffer();
+    if (!offer) throw new Error('this provider does not offer recovery');
+    const slotId = 'r-' + C.b64u(C.rand(4)).toLowerCase().replace(/[^a-z0-9]/g, 'x');
+    await C.addProviderRecoverySlot(this.doc, this.session, { providerId: offer.providerId, keyId: offer.keyId, providerPublicJwk: offer.publicJwk, slotId });
+    await this.save();
+    await this.saveProvider({ ...cfg, recovery: { slotId, keyId: offer.keyId } });
+    await provider.putKeyring(this.doc, this.session);
+    return offer;
+  }
+
+  async disableRecovery(cfg, provider = makeProvider(cfg)) {
+    const slotId = cfg.recovery?.slotId;
+    this.doc.keyring.slots = this.doc.keyring.slots.filter((s) => s.id !== slotId);
+    this.doc.keyring.revision += 1;
+    await this.save();
+    const { recovery, ...rest } = cfg;
+    await this.saveProvider(rest);
+    await provider.putKeyring(this.doc, this.session);
+  }
+
+  // Restore a copy on a new device: rebuild the chain in the provider's order, then open it (SPEC 8).
+  static async restore(cfg, walletId, passphrase, store = device) {
+    const provider = makeProvider(cfg);
+    const head = await provider.header(walletId);
+    const keyring = await provider.getKeyring(walletId);
+    if (!head || !keyring) throw new Error('no copy of this wallet at the provider');
+    const doc = await C.rebuildDoc(walletId, head.createdAt, keyring, await provider.list(walletId));
+    const w = await Wallet.unlock(doc, passphrase, store);
+    await w.save();
+    return w;
+  }
+
+  // After a provider released the DEK (SPEC 4.4): rebuild, open with the DEK, set a new passphrase, upload the keyring.
+  static async recoverWithDek(cfg, walletId, dek, newPassphrase, store = device) {
+    const provider = makeProvider(cfg);
+    const head = await provider.header(walletId);
+    const keyring = await provider.getKeyring(walletId);
+    const doc = await C.rebuildDoc(walletId, head.createdAt, keyring, await provider.list(walletId));
+    const session = await C.unlockWithDek(doc, dek);
+    const w = new Wallet(doc, session, store);
+    await w.decryptAll();
+    await w.changePassphrase(newPassphrase);
+    await provider.putKeyring(w.doc, w.session);
+    return w;
   }
 
   // Re-wrap the DEK under a new passphrase; records are not re-encrypted (TZ CR-4).

@@ -164,3 +164,7 @@ details input[type="number"] { width: 96px; }
   .vw-kpis { grid-template-columns: 1fr 1fr 1fr; }
   .vw-kpi-n { font-size: 1.125rem; }
 }
+
+/* L2 */
+.vw-alert { border-color: var(--av-danger); background: var(--av-danger-bg); }
+.vw-alert p { margin: 6px 0 10px; }
