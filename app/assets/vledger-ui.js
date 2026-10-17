@@ -3,7 +3,7 @@
 // value systems and goals, assessments with references and spent value, inbox, analytics, settings.
 
 import { Wallet, device, passphraseOk, inspectImport, pendingRecovery } from './vledger-store.js';
-import { makeProvider, restoreCode, parseRestoreCode, AEVRI_URL, AEVRI_RELAY, AEVRI_ARBITER, RelayClient } from './vledger-providers.js';
+import { makeProvider, restoreCode, parseRestoreCode, AEVRI_URL, AEVRI_RELAY, AEVRI_ARBITER, AEVRI_REGISTRY, fetchRegistry, RelayClient } from './vledger-providers.js';
 import * as V from './vledger-value.js';
 import * as C from './vledger-crypto.js';
 import { qrSvg } from './vledger-qr.js';
@@ -692,10 +692,23 @@ function eventDialog(ev, preset = {}) {
 
 // ---- registry ----
 
-async function registryDialog() {
-  const doc = await pickFile();
-  if (!doc) return;
-  const reg = doc.registry;
+function registryDialog() {
+  return modal(t('reg.open'), (close) => {
+    const url = h('input', { type: 'url', value: AEVRI_REGISTRY, required: true });
+    const msg = h('p', { class: 'vw-error', role: 'alert' });
+    return h('form', { onsubmit: async (e) => {
+      e.preventDefault();
+      msg.textContent = t('create.wait');
+      try { const doc = await fetchRegistry(url.value.trim()); close(true); await showRegistry(doc, 'url'); } catch (err) { msg.textContent = t('rl.failed', { msg: err.message }); }
+    } }, h('p', { class: 'vw-hint' }, t('reg.openHint')), field(t('reg.url'), url), msg,
+      h('div', { class: 'vw-actions' },
+        h('button', { class: 'vw-btn vw-primary', type: 'submit' }, t('reg.openGo')),
+        h('button', { class: 'vw-btn', type: 'button', onclick: async () => { const doc = await pickFile(); if (doc) { close(true); await showRegistry(doc, 'file'); } } }, t('reg.fromFile'))));
+  });
+}
+
+async function showRegistry(doc, origin) {
+  const reg = doc?.registry;
   if (!reg || reg.type !== 'aevri.vledger.registry') { toast(t('reg.bad')); return; }
   const ok = await C.verify(C.keyOfAddress(reg.owner.card.address), C.te.encode(C.canon(reg)), doc.sig) && await C.verifyCard(reg.owner);
   if (!ok) { toast(t('reg.badSig')); return; }
@@ -705,16 +718,17 @@ async function registryDialog() {
       h('div', { class: 'vw-row' }, h('strong', {}, it.title), h('span', { class: 'vw-chip' }, t('reg.kind.' + it.kind))),
       it.plan ? h('p', { class: 'vw-plan' }, t('reg.promise', { p: it.plan.promise })) : null,
       it.affects ? h('p', { class: 'vw-muted' }, it.affects) : null,
-      h('div', { class: 'vw-actions' }, h('button', { class: 'vw-btn vw-primary', onclick: async () => { close(true); await addFromRegistry(doc, it); } }, t(it.kind === 'object' ? 'reg.use' : 'reg.affected')))))));
+      h('div', { class: 'vw-actions' }, h('button', { class: 'vw-btn vw-primary', onclick: async () => { close(true); await addFromRegistry(doc, it, origin); } }, t(it.kind === 'object' ? 'reg.use' : 'reg.affected')))))));
 }
 
-async function addFromRegistry(doc, it) {
+async function addFromRegistry(doc, it, origin = 'file') {
   const reg = doc.registry;
   const owner = await guard(() => wallet.addCard(reg.owner));
   if (!owner) return;
-  if (!wallet.list('import').some((i) => i.body.originId === reg.registryUrl)) {
-    await wallet.add('import', { origin: 'file', originId: reg.registryUrl, payload: doc, payloadHash: await C.hashJson(doc) }, { source: 'registry' });
-  }
+  // keep the newest copy of the registry: its public references (medians of 5 and more) change over time
+  const imp = wallet.list('import').find((i) => i.body.originId === reg.registryUrl);
+  if (!imp) await wallet.add('import', { origin, originId: reg.registryUrl, payload: doc, payloadHash: await C.hashJson(doc) }, { source: 'registry' });
+  else if ((imp.body.payload?.registry?.updatedAt || '') < (reg.updatedAt || '')) await wallet.correct(imp.rootId, { ...imp.body, payload: doc, payloadHash: await C.hashJson(doc) });
   const rs = reg.systems.find((s) => s.systemId === it.system);
   let sys = systems().find((s) => s.body.registryUrl === reg.registryUrl);
   const sysId = sys ? sys.rootId : await wallet.add('value-system', { title: rs?.title || it.system, W: 1, status: 'active', registryUrl: reg.registryUrl, note: t('reg.sysNote') });

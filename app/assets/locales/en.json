@@ -532,5 +532,10 @@
   "cs.binding": "binding",
   "cs.opinion": "opinion",
   "cs.rules": "Arbiter rules",
-  "cs.noBinding": "A decision is possible only if both of you chose a binding arbiter when you confirmed the event. Ask for an opinion instead."
+  "cs.noBinding": "A decision is possible only if both of you chose a binding arbiter when you confirmed the event. Ask for an opinion instead.",
+  "reg.open": "Open a registry",
+  "reg.openHint": "A registry is a signed list of works, objects or events an organisation offers. The institute registry lists its research works; after you read or apply one, you can tell the institute what it gave you.",
+  "reg.url": "Registry address",
+  "reg.openGo": "Open",
+  "reg.fromFile": "From a file"
 }

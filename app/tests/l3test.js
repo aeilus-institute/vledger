@@ -2,7 +2,7 @@
 // cases and rulings.
 // Needs the reference server: python spec/tools/provider_server.py 8793 --delay 1 --test
 import { Wallet } from '../assets/vledger-store.js';
-import { RelayClient, ArbiterClient } from '../assets/vledger-providers.js';
+import { RelayClient, ArbiterClient, fetchRegistry } from '../assets/vledger-providers.js';
 import * as C from '../assets/vledger-crypto.js';
 
 const out = document.getElementById('out');
@@ -128,6 +128,15 @@ async function run() {
   await mun.deliver(await C.sealMessage(await A.card(), { kind: 'request', event: { actor: 'me', action: 'walk on', objects: ['Road'] }, system: 'City' }, mun.session));
   const r = await A.checkInbox();
   ok(r.dropped === 1 && r.received === 0, 'a request in a blocked system is dropped when fetched from the relay');
+
+  // A registry opened by its address (SPEC 12)
+  const regUrl = BASE + '/registry/test';
+  const rdoc = await fetchRegistry(regUrl);
+  const rsigOk = await C.verify(C.keyOfAddress(rdoc.registry.owner.card.address), C.te.encode(C.canon(rdoc.registry)), rdoc.sig) && await C.verifyCard(rdoc.registry.owner);
+  ok(rsigOk && rdoc.registry.items[0].itemId === 'how-to-assess-value', 'a registry opened by URL verifies against its owner card');
+  let moved = false;
+  try { await fetchRegistry(regUrl + '?copy=1'); moved = true; } catch { /* expected */ }
+  ok(!moved, 'a registry served from an address it does not name is refused');
 
   // Withdraw the card
   await B.withdrawCard();

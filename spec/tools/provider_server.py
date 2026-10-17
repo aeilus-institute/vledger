@@ -52,6 +52,8 @@ cases = {}     # caseId -> case
 RELAY_MAX = 256 * 1024
 RELAY_DAYS = 14
 KEY_ID = 'reference-recovery-' + secrets.token_hex(4)
+ORG_KEY = Ed25519PrivateKey.generate()          # a test organisation that publishes a registry
+ORG_EC = ec.generate_private_key(ec.SECP256R1())
 
 
 def canon(v):
@@ -201,6 +203,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.relay(method, parts[1:])
         if parts[0] == 'arbiter':
             return self.arbiter(method, parts[1:])
+        if TEST and parts == ['registry', 'test'] and method == 'GET':
+            return self.registry()
         if parts[:2] == ['recovery', 'requests']:
             return self.recovery(method, parts[2] if len(parts) > 2 else None)
         if TEST and parts[0] == 'debug':
@@ -365,6 +369,22 @@ class Handler(BaseHTTPRequestHandler):
                     cards.pop(addr, None)
                 return self.send(204)
         return self.problem(404, 'not-found')
+
+    # ---- a signed registry of a test organisation (SPEC 12), test mode only ----
+    def registry(self):
+        url = f'http://127.0.0.1:{PORT}/v1/registry/test'
+        n = ORG_EC.public_key().public_numbers()
+        card = {'type': 'aevri.vledger.card', 'version': 1, 'address': 'vw1:' + b64u(ORG_KEY.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)),
+                'kind': 'organization', 'name': 'Test Institute', 'encKey': {'kty': 'EC', 'crv': 'P-256', 'x': b64u(n.x.to_bytes(32, 'big')), 'y': b64u(n.y.to_bytes(32, 'big'))},
+                'inbox': f'http://127.0.0.1:{PORT}/v1/relay', 'registryUrl': url,
+                'storage': {'stores': True, 'purpose': 'Testing', 'retentionDays': 1, 'publishes': 'sender-choice'}, 'updatedAt': '2026-10-17T00:00:00Z'}
+        owner = {'card': card, 'sig': b64u(ORG_KEY.sign(canon(card).encode()))}
+        reg = {'type': 'aevri.vledger.registry', 'version': 1, 'registryUrl': url, 'owner': owner, 'updatedAt': iso(now()),
+               'systems': [{'systemId': 'research', 'title': 'Research and methods'}],
+               'items': [{'itemId': 'how-to-assess-value', 'kind': 'object', 'title': 'How to Assess Value', 'system': 'research', 'category': 'information',
+                          'actions': ['read', 'applied'], 'plan': {'promise': 'A method you can apply this week'}}],
+               'references': [{'system': 'research', 'phrase': 'Readers of "How to Assess Value"', 'v': 0.02, 'words': 'Median of 5 readers who shared it'}]}
+        return self.send(200, {'registry': reg, 'sig': b64u(ORG_KEY.sign(canon(reg).encode()))})
 
     # ---- arbiter (openapi/arbiter.yaml): key, stamps, lookup, cases ----
     def arbiter(self, method, parts):

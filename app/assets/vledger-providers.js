@@ -231,6 +231,16 @@ export class RelayClient {
   async withdrawCard(session) { return call(`${this.url}/cards/${encodeURIComponent(session.address)}`, { method: 'DELETE', headers: await proofHeaders(this.url, session) }); }
 }
 
+export const AEVRI_REGISTRY = 'https://aeilus.institute/api/v1/vledger/registry/aevri';
+
+// A public registry by URL (SPEC 12). It must say it lives at that URL; the signature is checked by the caller.
+export async function fetchRegistry(url) {
+  const doc = await call(url, { headers: { Accept: 'application/json' } });
+  if (!doc?.registry || doc.registry.type !== 'aevri.vledger.registry') throw new Error('not a registry');
+  if (doc.registry.registryUrl !== url) throw new Error('the registry lives at another address: ' + doc.registry.registryUrl);
+  return doc;
+}
+
 export class ArbiterClient {
   constructor(url = AEVRI_ARBITER) { this.url = url.replace(/\/$/, ''); }
   async ref() {

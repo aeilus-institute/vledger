@@ -87,7 +87,7 @@ defs = {
     'disclosure': {'type': 'object', 'required': ['grantId', 'deliveredAt', 'recipient', 'contentHash'], 'properties': {
         'grantId': ID, 'deliveredAt': c('time'), 'recipient': {'type': 'string'}, 'contentHash': c('sha256')}},
     'import': {'type': 'object', 'required': ['origin', 'originId', 'payload', 'payloadHash'], 'properties': {
-        'origin': {'enum': ['aevri.site', 'aevri.vvp', 'vet', 'vss', 'file', 'device', 'agent']}, 'originId': {'type': 'string'}, 'payload': {}, 'payloadHash': c('sha256')}},
+        'origin': {'enum': ['aevri.site', 'aevri.vvp', 'vet', 'vss', 'file', 'url', 'device', 'agent']}, 'originId': {'type': 'string'}, 'payload': {}, 'payloadHash': c('sha256')}},
     'note': {'type': 'object', 'required': ['text'], 'properties': {'text': TEXT}},
 }
 KIND_DEF = {'contact': 'contact', 'value-system': 'valueSystem', 'goal': 'goal', 'event': 'event', 'element-type': 'elementType',

@@ -1220,6 +1220,7 @@
             "vet",
             "vss",
             "file",
+            "url",
             "device",
             "agent"
           ]
