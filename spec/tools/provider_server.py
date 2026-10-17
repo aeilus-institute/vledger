@@ -19,6 +19,7 @@ import secrets
 import sys
 import threading
 import time
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -41,7 +42,46 @@ recoveries = {}   # requestId -> {...}
 github = {}       # (owner, repo, path) -> {content(bytes), sha}
 
 REC_KEY = ec.generate_private_key(ec.SECP256R1())
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives import serialization
+ARB_KEY = Ed25519PrivateKey.generate()
+inboxes = {}   # address -> [(received_ts, message)]
+cards = {}     # address -> signed card
+stamps = {}    # receiptDigest -> [stamp]
+cases = {}     # caseId -> case
+RELAY_MAX = 256 * 1024
+RELAY_DAYS = 14
 KEY_ID = 'reference-recovery-' + secrets.token_hex(4)
+
+
+def canon(v):
+    if v is None:
+        return 'null'
+    if v is True:
+        return 'true'
+    if v is False:
+        return 'false'
+    if isinstance(v, int):
+        return str(v)
+    if isinstance(v, float):
+        return repr(v) if not v.is_integer() else str(int(v))
+    if isinstance(v, str):
+        return json.dumps(v, ensure_ascii=False)
+    if isinstance(v, list):
+        return '[' + ','.join(canon(x) for x in v) + ']'
+    return '{' + ','.join(json.dumps(k, ensure_ascii=False) + ':' + canon(v[k]) for k in sorted(v, key=lambda k: k.encode('utf-16-be'))) + '}'
+
+
+def ed_ok(x, data, sig):
+    try:
+        Ed25519PublicKey.from_public_bytes(ub64(x)).verify(ub64(sig), data)
+        return True
+    except (InvalidSignature, ValueError):
+        return False
+
+
+def arb_pub():
+    return {'alg': 'Ed25519', 'x': b64u(ARB_KEY.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw))}
 
 
 def b64u(b):
@@ -142,7 +182,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.github(method, path[3:], q)
             if not path.startswith('/v1/'):
                 return self.problem(404, 'not-found')
-            parts = path[4:].strip('/').split('/')
+            parts = [urllib.parse.unquote(x) for x in path[4:].strip('/').split('/')]
             return self.v1(method, parts, q)
         except (ValueError, KeyError, TypeError) as e:
             return self.problem(400, 'bad-request:' + type(e).__name__)
@@ -157,12 +197,16 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, {'providerId': f'http://127.0.0.1:{PORT}/v1', 'keyId': KEY_ID, 'publicJwk': pub_jwk(REC_KEY),
                                    'procedureUrl': f'http://127.0.0.1:{PORT}/procedure', 'delayDays': DELAY / 86400, 'notifies': ['devices'],
                                    'minimumAge': 18, 'canRead': True})
+        if parts[0] == 'relay':
+            return self.relay(method, parts[1:])
+        if parts[0] == 'arbiter':
+            return self.arbiter(method, parts[1:])
         if parts[:2] == ['recovery', 'requests']:
             return self.recovery(method, parts[2] if len(parts) > 2 else None)
         if TEST and parts[0] == 'debug':
             if parts[1:2] == ['dump'] and method == 'GET':
                 with LOCK:
-                    return self.send(200, {'wallets': wallets, 'recoveries': {k: {kk: vv for kk, vv in v.items()} for k, v in recoveries.items()}})
+                    return self.send(200, {'wallets': wallets, 'recoveries': {k: {kk: vv for kk, vv in v.items()} for k, v in recoveries.items()}, 'inboxes': inboxes, 'cards': cards, 'stamps': stamps})
             if parts[1:2] == ['approve'] and method == 'POST':
                 with LOCK:
                     recoveries[parts[2]]['approved'] = True
@@ -273,6 +317,89 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(200, {'status': 'ready', 'release': release(rid, dek, r['clientEpk'])})
                 return self.send(200, {'status': r['status'], 'readyAfter': r['readyAfter']})
         return self.problem(405, 'method')
+
+    # ---- relay (openapi/relay.yaml) ----
+    def relay(self, method, parts):
+        if parts == ['policy'] and method == 'GET':
+            return self.send(200, {'maxHoldDays': RELAY_DAYS, 'logsContent': False, 'maxBytes': RELAY_MAX})
+        if parts == ['challenge'] and method == 'GET':
+            ch = secrets.token_urlsafe(24)
+            with LOCK:
+                challenges[ch] = time.time() + 300
+            return self.send(200, {'challenge': ch})
+        if parts == ['messages'] and method == 'POST':
+            raw = self.rfile.read(int(self.headers.get('Content-Length') or 0))
+            if len(raw) > RELAY_MAX:
+                return self.problem(413, 'too-large')
+            m = json.loads(raw)
+            if m.get('type') != 'aevri.vledger.message' or not re.fullmatch(r'vw1:[A-Za-z0-9_-]{43}', m.get('to', '')):
+                return self.problem(422, 'not-a-message')
+            with LOCK:
+                inboxes.setdefault(m['to'], []).append((time.time(), m))
+            return self.send(202, {'accepted': True})
+        if len(parts) == 2 and parts[0] == 'inbox' and method == 'GET':
+            addr = parts[1]
+            if not self.proven(addr):
+                return self.problem(403, 'proof')
+            with LOCK:
+                items = [m for ts, m in inboxes.pop(addr, []) if ts > time.time() - RELAY_DAYS * 86400]
+            return self.send(200, items)
+        if len(parts) == 2 and parts[0] == 'cards':
+            addr = parts[1]
+            if method == 'GET':
+                return self.send(200, cards[addr]) if addr in cards else self.problem(404, 'no-card')
+            if method == 'PUT':
+                doc = self.body()
+                c = doc.get('card', {})
+                if c.get('address') != addr or not ed_ok(addr[4:], canon(c).encode(), doc.get('sig', '')):
+                    return self.problem(422, 'bad-card')
+                with LOCK:
+                    cards[addr] = doc
+                return self.send(204)
+            if method == 'DELETE':
+                if not self.proven(addr):
+                    return self.problem(403, 'proof')
+                with LOCK:
+                    cards.pop(addr, None)
+                return self.send(204)
+        return self.problem(404, 'not-found')
+
+    # ---- arbiter (openapi/arbiter.yaml): key, stamps, lookup, cases ----
+    def arbiter(self, method, parts):
+        if parts == ['key'] and method == 'GET':
+            return self.send(200, {'key': arb_pub(), 'rulesUrl': f'http://127.0.0.1:{PORT}/rules', 'modes': ['attest', 'opinion', 'binding']})
+        if parts == ['challenge'] and method == 'GET':
+            ch = secrets.token_urlsafe(24)
+            with LOCK:
+                challenges[ch] = time.time() + 300
+            return self.send(200, {'challenge': ch})
+        if parts == ['stamps'] and method == 'POST':
+            b = self.body()
+            d = bytes.fromhex(b['receiptDigest'][7:])
+            keys = b['keys']
+            if len(keys) < 2 or not all(ed_ok(keys[s_['party']]['x'], d, s_['sig']) for s_ in b['signatures']):
+                return self.problem(422, 'bad-signature')
+            stamp = {'type': 'aevri.vledger.stamp', 'receiptDigest': b['receiptDigest'],
+                     'parties': ['sha256:' + hashlib.sha256(canon(k).encode()).hexdigest() for k in keys],
+                     'receivedAt': iso(now()), 'arbiter': {'url': f'http://127.0.0.1:{PORT}/v1/arbiter', 'key': arb_pub()}}
+            stamp['sig'] = b64u(ARB_KEY.sign(canon(stamp).encode()))
+            with LOCK:
+                stamps.setdefault(b['receiptDigest'], []).append(stamp)
+            return self.send(201, stamp)
+        if len(parts) == 2 and parts[0] == 'stamps' and method == 'GET':
+            digest = parts[1]
+            addr = self.headers.get('X-Vledger-Address', '')
+            thumb = 'sha256:' + hashlib.sha256(canon({'alg': 'Ed25519', 'x': addr[4:]}).encode()).hexdigest()
+            st = stamps.get(digest, [])
+            if not st or thumb not in st[0]['parties'] or not self.proven(addr):
+                return self.problem(403, 'not-a-party')
+            return self.send(200, st)
+        if parts == ['cases'] and method == 'POST':
+            b = self.body()
+            with LOCK:
+                cases[b['caseId']] = {**b, 'status': 'open'}
+            return self.send(202, {'caseId': b['caseId'], 'status': 'open'})
+        return self.problem(404, 'not-found')
 
     # ---- GitHub contents API mock (subset), test mode only ----
     def github(self, method, path, q):

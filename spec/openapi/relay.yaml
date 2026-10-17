@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: aevri.vledger relay
-  version: 1.0.0-d2
+  version: 1.0.0-d4
   summary: Passes encrypted messages between wallets and keeps nothing (SPEC section 11).
   license: { name: MIT, identifier: MIT }
   description: |
@@ -9,8 +9,10 @@ info:
     read messages (they are encrypted to the recipient's exchange key), does not log content, and keeps only counts.
     Senders may be anonymous. A relay MAY limit message size and rate per sender address or network.
 servers:
-  - url: https://aeilus.institute/relay/v1
-    description: ÆVRI relay (stage L3, not built yet)
+  - url: https://aeilus.institute/api/v1/vledger/relay
+    description: ÆVRI relay
+  - url: http://127.0.0.1:8793/v1/relay
+    description: Reference relay for tests (spec/tools/provider_server.py)
 paths:
   /policy:
     get:
@@ -50,3 +52,20 @@ paths:
       responses:
         '200': { description: Messages, content: { application/json: { schema: { type: array, items: { $ref: 'https://aeilus.institute/schema/vledger/1/message.schema.json' } } } } }
         '403': { description: Proof does not match the address }
+  /cards/{address}:
+    parameters: [ { name: address, in: path, required: true, schema: { type: string } } ]
+    get:
+      summary: The card a holder chose to publish here (optional directory)
+      responses:
+        '200': { description: Card, content: { application/json: { schema: { $ref: 'https://aeilus.institute/schema/vledger/1/card.schema.json' } } } }
+        '404': { description: Not published }
+    put:
+      summary: Publish or replace one's own card. The relay checks the signature and that the card's address is the path address
+      requestBody: { required: true, content: { application/json: { schema: { $ref: 'https://aeilus.institute/schema/vledger/1/card.schema.json' } } } }
+      responses:
+        '204': { description: Published }
+        '422': { description: Signature or address does not match }
+    delete:
+      summary: Withdraw the card (wallet proof headers as for the inbox)
+      responses:
+        '204': { description: Removed }

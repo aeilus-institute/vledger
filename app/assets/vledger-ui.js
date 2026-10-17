@@ -3,7 +3,7 @@
 // value systems and goals, assessments with references and spent value, inbox, analytics, settings.
 
 import { Wallet, device, passphraseOk, inspectImport, pendingRecovery } from './vledger-store.js';
-import { makeProvider, restoreCode, parseRestoreCode, AEVRI_URL } from './vledger-providers.js';
+import { makeProvider, restoreCode, parseRestoreCode, AEVRI_URL, AEVRI_RELAY, AEVRI_ARBITER, RelayClient } from './vledger-providers.js';
 import * as V from './vledger-value.js';
 import * as C from './vledger-crypto.js';
 import { qrSvg } from './vledger-qr.js';
@@ -272,8 +272,18 @@ async function importDialog() {
 
 // ---- providers and sync (L2) ----
 
+async function checkMessages(quiet = true) {
+  if (!wallet || !wallet.relayUrl()) return;
+  try {
+    const r = await wallet.checkInbox();
+    if (r.received || r.matched || !quiet) toast(t('rl.checked', { n: r.received, m: r.matched }));
+    if (r.received || r.matched) render();
+  } catch (e) { console.warn(e); if (!quiet) toast(t('rl.failed', { msg: e.message })); }
+}
+
 async function syncAll(quiet = false) {
   if (!wallet || syncing) return;
+  checkMessages(true);
   const list = wallet.providers();
   if (!list.length) return;
   syncing = true;
@@ -531,7 +541,8 @@ function eventCard(ev, as) {
   return h('article', { class: 'vw-card' },
     h('div', { class: 'vw-row' }, h('h3', {}, phrase(ev)),
       h('span', { class: 'vw-chips' }, h('span', { class: 'vw-chip' }, t('role.' + b.role)), b.systemId ? h('span', { class: 'vw-chip vw-chip-sys' }, sysTitle(b.systemId)) : null,
-        b.registryRef ? h('span', { class: 'vw-chip' }, t('ev.fromReg')) : null)),
+        b.registryRef ? h('span', { class: 'vw-chip' }, t('ev.fromReg')) : null,
+        b.receiptState ? h('span', { class: 'vw-chip' + (b.receiptState === 'matched' ? ' vw-chip-sys' : '') }, t('rc.state.' + b.receiptState) + ((b.stamps || []).length ? ' · ' + t('rc.stamped') : '')) : null)),
     h('div', { class: 'vw-phases' },
       h('div', { class: 'vw-phase' }, h('div', { class: 'vw-muted' }, t('phase.plan')),
         plans.length ? plans.map((p) => h('div', { class: 'vw-plan' }, `${p.body.author === selfId() ? t('plan.mine') : nameOf(p.body.author)}: ${p.body.promise}`,
@@ -543,6 +554,11 @@ function eventCard(ev, as) {
       h('button', { class: 'vw-btn', onclick: () => assessDialog(ev.rootId, null, { phase: realized ? 'retro' : 'realized' }) }, t(realized ? 'ev.assessLater' : 'ev.assess')),
       h('button', { class: 'vw-btn', onclick: () => planDialog(ev.rootId) }, t('ev.plan')),
       latest && target ? h('button', { class: 'vw-btn', onclick: () => shareDialog(ev, latest, target) }, t('ev.share', { name: nameOf(target) })) : null,
+      !b.receiptState && receiptTarget(ev) ? h('button', { class: 'vw-btn', onclick: () => confirmDialog(ev, receiptTarget(ev)) }, t('rc.btn')) : null,
+      b.receiptState === 'matched' && !(b.stamps || []).length ? h('button', { class: 'vw-btn vw-ghost', onclick: async () => {
+        const st = await guard(() => wallet.stampAt(ev.rootId, (wallet.settings().arbiters || [])[0]?.url || AEVRI_ARBITER));
+        if (st) { toast(t('rc.stampDone', { at: st.receivedAt.replace('T', ' ').slice(0, 16) })); render(); }
+      } }, t('rc.stamp')) : null,
       h('button', { class: 'vw-btn vw-ghost', onclick: () => eventDialog(ev) }, t('edit')),
       itemMenu(ev)));
 }
@@ -900,15 +916,50 @@ function shareDialog(ev, a, targetId) {
       if (ev.body.systemId) body.system = sysTitle(ev.body.systemId);
       if (plans.length && typeof b.v === 'number') { const pv = plans[0].body.plannedV; if (typeof pv === 'number') body.planGap = b.v < 0 ? 'harm' : b.v > pv * 1.1 ? 'above-plan' : b.v < pv * 0.9 ? 'below-plan' : 'as-planned'; }
       const msg = await guard(() => wallet.prepareShare(targetId, body, { about: a.rootId, anonymous: anon.checked }));
-      if (msg) { download(`share_${slug(c.body.name)}_${today()}.vwmsg.json`, msg); toast(t('sh.ready')); close(true); render(); }
+      if (msg) { close(true); render(); await handOver(msg, 'share_' + c.body.name); }
     } },
     h('div', { class: 'vw-card vw-policy' }, h('strong', {}, t('sh.policy')),
       h('p', {}, st.stores ? t('sh.stores', { p: st.purpose || '-', d: st.retentionDays ?? '-' }) : t('sh.notStores')),
       h('p', {}, t('sh.publishes.' + (st.publishes || 'no')))),
     field(t('sh.publish'), publish),
     h('label', { class: 'vw-check' }, anon, h('span', {}, t('sh.anon'))),
-    h('p', { class: 'vw-hint' }, t('sh.delivery')),
-    submitRow(t('sh.go')));
+    h('p', { class: 'vw-hint' }, wallet.relayUrl() ? t('sh.viaRelay') : t('sh.delivery')),
+    submitRow(t(wallet.relayUrl() ? 'sh.send' : 'sh.go')));
+  });
+}
+
+async function handOver(msg, name) {
+  if (await guard(() => wallet.deliver(msg))) { toast(t('rl.sent')); return; }
+  download(`${slug(name)}_${today()}.vwmsg.json`, msg);
+  toast(t('sh.ready'));
+}
+
+function receiptTarget(ev) {
+  const id = shareTarget(ev);
+  const c = id && wallet.get(id);
+  return c && c.body.card && !ev.body.registryRef ? id : null;
+}
+
+function confirmDialog(ev, otherId) {
+  const other = wallet.get(otherId);
+  return modal(t('rc.title', { name: other.body.name }), (close) => {
+    const mode = select([['attest', t('rc.mode.attest')], ['opinion', t('rc.mode.opinion')], ['binding', t('rc.mode.binding')]], 'attest');
+    const msg = h('p', { class: 'vw-error', role: 'alert' });
+    return h('form', { onsubmit: async (e) => {
+      e.preventDefault();
+      msg.textContent = t('create.wait');
+      try {
+        const arbUrl = (wallet.settings().arbiters || [])[0]?.url || AEVRI_ARBITER;
+        let arbiter = null;
+        if (mode.value !== 'attest') {
+          const k = await (await fetch(arbUrl + '/key')).json();
+          arbiter = { url: arbUrl, key: k.key };
+        }
+        const offer = await wallet.offerEvent(ev.rootId, otherId, { mode: mode.value, arbiter });
+        close(true); render();
+        await handOver(offer, other.body.name);
+      } catch (err) { msg.textContent = t('rl.failed', { msg: err.message }); }
+    } }, h('p', {}, t('rc.lead')), field(t('rc.mode'), mode, t('rc.modeHint')), msg, submitRow(t('rc.go')));
   });
 }
 
@@ -983,6 +1034,10 @@ function contactDialog(c, preset = {}) {
         body.address = p.address;
       } else delete body.address;
       if (note.value.trim()) body.note = note.value.trim(); else delete body.note;
+      if (body.address && !body.card && wallet.relayUrl()) {
+        const card = await wallet.lookupCard(body.address).catch(() => null);
+        if (card) { body.card = card; toast(t('rl.cardFound')); }
+      }
       await guard(() => (c ? wallet.correct(c.rootId, body) : wallet.add('contact', body)));
       close(true); render();
     } }, field(t('cp.type'), type), field(t('cp.name'), name), field(t('ct.address'), addr, t('ct.addressHint')), field(t('cp.note'), note), msg, submitRow());
@@ -1161,7 +1216,9 @@ function tabAnalytics() {
 function tabInbox() {
   const sugg = events(true).filter((e) => e.body.status === 'suggested');
   const msgs = wallet.list('message-in').sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  const out = [h('div', { class: 'vw-toolbar' }, h('button', { class: 'vw-btn', onclick: async () => { const d = await pickFile(); if (d) await receiveMessage(d); } }, t('in.open')))];
+  const out = [h('div', { class: 'vw-toolbar' },
+    wallet.relayUrl() ? h('button', { class: 'vw-btn vw-primary', onclick: () => checkMessages(false) }, t('rl.check')) : null,
+    h('button', { class: 'vw-btn', onclick: async () => { const d = await pickFile(); if (d) await receiveMessage(d); } }, t('in.open')))];
   out.push(h('h2', {}, t('in.suggested')));
   if (!sugg.length) out.push(h('p', { class: 'vw-muted' }, t('in.noSuggested')));
   for (const e of sugg) {
@@ -1177,9 +1234,17 @@ function tabInbox() {
   for (const m of msgs) {
     const b = m.body.body;
     const sender = m.body.from ? (wallet.contactByAddress(m.body.from)?.body.name || short(m.body.from)) : t('in.anonymous');
-    const words = b.event ? `${b.event.actor} ${b.event.action} ${(b.event.objects || []).join(', ')}` : '';
+    const words = b.event ? `${b.event.actor} ${b.event.action} ${(b.event.objects || []).join(', ')}`
+      : (b.kind === 'event-offer' && b.opening ? `${b.opening.action.text} ${(b.opening.objects || []).map((o) => o.label).join(', ')} (${String(b.opening.occurredAt).slice(0, 10)})` : '');
     const acts = [];
     if (b.kind === 'request') acts.push(h('button', { class: 'vw-btn vw-primary', onclick: () => answerRequest(m) }, t('in.answer')));
+    if (b.kind === 'event-offer' && b.opening && m.body.state === 'new') acts.push(h('button', { class: 'vw-btn vw-primary', onclick: async () => {
+      const r = await guard(() => wallet.acceptOffer(m.rootId));
+      if (!r) return;
+      toast(t('rc.accepted'));
+      if (r.reply) await handOver(r.reply, 'confirmation');
+      render();
+    } }, t('rc.accept')));
     if (b.kind === 'card') acts.push(h('button', { class: 'vw-btn vw-primary', onclick: async () => { await guard(() => wallet.addCard(b.card)); await wallet.setMessageState(m.rootId, 'accepted'); render(); } }, t('in.addContact')));
     if (m.body.state === 'new') acts.push(h('button', { class: 'vw-btn vw-ghost', onclick: async () => { await wallet.setMessageState(m.rootId, b.kind === 'share' ? 'accepted' : 'ignored'); render(); } }, t(b.kind === 'share' ? 'in.read' : 'in.ignore')));
     out.push(h('article', { class: 'vw-card' + (m.body.state === 'new' ? ' vw-new' : '') },
@@ -1218,6 +1283,31 @@ async function answerRequest(m) {
 
 // ---- settings ----
 
+function relaySection() {
+  const s = wallet.settings();
+  const on = (s.relays || []).length > 0;
+  const url = h('input', { type: 'url', value: (s.relays || [])[0] || AEVRI_RELAY });
+  const box = h('input', { type: 'checkbox', checked: on, onchange: async (e) => {
+    const relays = e.target.checked ? [url.value.trim().replace(/\/$/, '') || AEVRI_RELAY] : [];
+    await guard(() => wallet.saveSettings({ ...wallet.settings(), relays }));
+    toast(t('saved')); render();
+    if (relays.length) checkMessages(false);
+  } });
+  const pol = h('p', { class: 'vw-hint' });
+  if (on) new RelayClient((s.relays || [])[0]).policy().then((p) => { if (p) pol.textContent = t('rl.policy', { days: p.maxHoldDays }); }).catch(() => {});
+  return [
+    h('h2', {}, t('rl.title')), h('p', { class: 'vw-hint' }, t('rl.lead')),
+    h('label', { class: 'vw-check' }, box, h('span', {}, t('rl.use'))),
+    h('details', {}, h('summary', {}, t('rl.other')), field(t('rl.url'), url, t('rl.urlHint'))),
+    pol,
+    on ? h('div', { class: 'vw-actions' },
+      h('button', { class: 'vw-btn', onclick: () => checkMessages(false) }, t('rl.check')),
+      h('button', { class: 'vw-btn', onclick: async () => { if (await guard(() => wallet.publishCard())) toast(t('rl.published')); } }, t('rl.publish')),
+      h('button', { class: 'vw-btn vw-ghost', onclick: async () => { if (await guard(() => wallet.withdrawCard())) toast(t('rl.withdrawn')); } }, t('rl.withdraw'))) : null,
+    on ? h('p', { class: 'vw-hint' }, t('rl.publishHint')) : null,
+  ];
+}
+
 function tabSettings() {
   const s = wallet.settings();
   const req = s.requests || {};
@@ -1239,6 +1329,7 @@ function tabSettings() {
   const stPub = select(['no', 'anonymous', 'named', 'sender-choice'].map((k) => [k, t('sh.publishes.' + k)]), st.publishes);
   const types = wallet.list('element-type');
   return [
+    relaySection(),
     h('h2', {}, t('set.requests')), h('p', { class: 'vw-hint' }, t('set.requestsHint')),
     h('label', { class: 'vw-check' }, blockAll, h('span', {}, t('set.blockAll'))),
     sysBoxes.length ? h('fieldset', {}, h('legend', {}, t('set.blockSystems')), sysBoxes) : null,

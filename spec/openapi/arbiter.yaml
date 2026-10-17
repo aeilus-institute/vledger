@@ -11,8 +11,10 @@ info:
     arbiter in a binding mandate). Stamps and rulings are signed with the arbiter key over the JCS form of the object
     without `sig`.
 servers:
-  - url: https://aeilus.institute/arbiter/v1
-    description: ÆVRI, the default arbiter for wallets made by ÆVRI tools (L3, not built yet)
+  - url: https://aeilus.institute/api/v1/vledger/arbiter
+    description: ÆVRI, the default arbiter for wallets made by ÆVRI tools
+  - url: http://127.0.0.1:8793/v1/arbiter
+    description: Reference arbiter for tests (spec/tools/provider_server.py)
 paths:
   /key:
     get:

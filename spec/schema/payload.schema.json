@@ -570,6 +570,16 @@
         "receipt": {
           "$ref": "receipt.schema.json"
         },
+        "receiptState": {
+          "enum": [
+            "offered",
+            "matched",
+            "disputed"
+          ]
+        },
+        "receiptOpening": {
+          "type": "object"
+        },
         "stamps": {
           "type": "array",
           "items": {

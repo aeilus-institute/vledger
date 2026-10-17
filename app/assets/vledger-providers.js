@@ -197,3 +197,49 @@ export class GitHubProvider {
   async notices() { return []; }
   async recoveryOffer() { return null; }
 }
+
+// ---- relay and arbiter clients (L3; spec/openapi/relay.yaml, arbiter.yaml) ----
+
+export const AEVRI_RELAY = 'https://aeilus.institute/api/v1/vledger/relay';
+export const AEVRI_ARBITER = 'https://aeilus.institute/api/v1/vledger/arbiter';
+
+async function proofHeaders(base, session, address) {
+  const ch = await (await fetch(base + '/challenge', { credentials: 'omit' })).json();
+  return { 'X-Vledger-Address': address || session.address, 'X-Vledger-Challenge': ch.challenge, 'X-Vledger-Proof': await C.sign(session.signer, te.encode(ch.challenge)) };
+}
+
+async function call(url, opts = {}) {
+  const r = await fetch(url, { credentials: 'omit', ...opts });
+  if (r.status === 404) return null;
+  if (!r.ok) {
+    let code = r.status;
+    try { code = (await r.json()).code || code; } catch { /* no body */ }
+    const err = new Error(`${opts.method || 'GET'} ${url}: ${code}`);
+    err.code = code;
+    throw err;
+  }
+  return r.status === 204 ? true : r.json();
+}
+
+export class RelayClient {
+  constructor(url = AEVRI_RELAY) { this.url = url.replace(/\/$/, ''); }
+  policy() { return call(this.url + '/policy'); }
+  send(msg) { return call(this.url + '/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(msg) }); }
+  async inbox(session) { return (await call(`${this.url}/inbox/${encodeURIComponent(session.address)}`, { headers: await proofHeaders(this.url, session) })) || []; }
+  getCard(address) { return call(`${this.url}/cards/${encodeURIComponent(address)}`); }
+  publishCard(cardDoc) { return call(`${this.url}/cards/${encodeURIComponent(cardDoc.card.address)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cardDoc) }); }
+  async withdrawCard(session) { return call(`${this.url}/cards/${encodeURIComponent(session.address)}`, { method: 'DELETE', headers: await proofHeaders(this.url, session) }); }
+}
+
+export class ArbiterClient {
+  constructor(url = AEVRI_ARBITER) { this.url = url.replace(/\/$/, ''); }
+  async ref() {
+    const k = await call(this.url + '/key');
+    return { url: this.url, key: k.key, name: k.name || this.url, rulesUrl: k.rulesUrl };
+  }
+  stamp(bundle, digest) {
+    return call(this.url + '/stamps', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ receiptDigest: digest, keys: bundle.receipt.parties.map((p) => p.key), signatures: bundle.signatures }) });
+  }
+  async lookup(digest, session) { return call(`${this.url}/stamps/${encodeURIComponent(digest)}`, { headers: await proofHeaders(this.url, session) }); }
+}

@@ -240,6 +240,85 @@
             },
             "receipt": {
               "$ref": "receipt.schema.json"
+            },
+            "opening": {
+              "type": "object",
+              "description": "What the digests hide, for the other party only",
+              "properties": {
+                "action": {
+                  "type": "object",
+                  "required": [
+                    "salt",
+                    "text"
+                  ],
+                  "properties": {
+                    "salt": {
+                      "$ref": "common.schema.json#/$defs/b64u"
+                    },
+                    "text": {
+                      "$ref": "common.schema.json#/$defs/line"
+                    }
+                  }
+                },
+                "objects": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "salt",
+                      "label"
+                    ],
+                    "properties": {
+                      "salt": {
+                        "$ref": "common.schema.json#/$defs/b64u"
+                      },
+                      "label": {
+                        "$ref": "common.schema.json#/$defs/line"
+                      },
+                      "quantity": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "unit": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "note": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                },
+                "roles": {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "actor",
+                      "affected",
+                      "user",
+                      "witness",
+                      "party"
+                    ]
+                  }
+                },
+                "occurredAt": {
+                  "oneOf": [
+                    {
+                      "$ref": "common.schema.json#/$defs/time"
+                    },
+                    {
+                      "$ref": "common.schema.json#/$defs/date"
+                    }
+                  ]
+                }
+              }
             }
           }
         },

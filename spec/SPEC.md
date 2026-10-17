@@ -1,8 +1,10 @@
 # Value Wallet format and protocols - `aevri.vledger` 1.0
 
-Status: **draft 1.0-d3** (2026-10-17). Editor: Aeilus Value Research Institute (ÆVRI).
+Status: **draft 1.0-d4** (2026-10-17). Editor: Aeilus Value Research Institute (ÆVRI).
 Licence: CC BY 4.0 (this text), MIT (reference code and schemas). Requirements (Russian): TZ v0.2 and v0.3.
 Fixtures in `fixtures/` are produced by `reference/` (Web Crypto) and pass the independent `tools/verify_fixtures.py`.
+Changes from d3 (stage L3): `opening` in event offers; the optional card directory of relays; the institute relay
+and arbiter addresses (`openapi/relay.yaml`, `openapi/arbiter.yaml`).
 Changes from d2 (stage L2): storage providers keep envelopes as a set and each device rebuilds its chain; restore
 codes; the GitHub layout; wallet-proof authentication; the recovery request, notice, cancel and release protocol;
 `settings.providers[].config`. Records are unchanged, so d2 fixtures stay valid.
@@ -234,6 +236,13 @@ without `sig`.
 - **Request blocking.** A wallet MUST drop a `request` silently when `settings.requests.blockAll` is true, when the
   sender's address belongs to a contact in `blockContacts`, or when the request names a system (by `registryUrl` or
   title) that maps to a system in `blockSystems`. The sender learns nothing.
+- **Event offers** carry, besides the receipt and the sender's signature, an `opening` (the salts and texts behind
+  the action and object digests, the parties' roles and the time) so that the other party can see what it is asked to
+  sign. The opening travels only inside the encrypted message, never to an arbiter.
+- **Card directory** (optional, `openapi/relay.yaml`): a holder MAY publish the signed card at a relay so that others
+  who have only the address (from a QR code) can fetch the card and send encrypted messages. The relay verifies the
+  card signature and the address; removal needs a wallet proof. Publishing is the holder's choice; nothing is
+  published by default.
 - **Relays** (`openapi/relay.yaml`) accept messages for an address and hand them to the address holder after a
   key-possession proof. A relay MUST NOT keep a message after delivery or longer than 14 days, MUST NOT log content,
   and cannot read messages.

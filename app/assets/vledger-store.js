@@ -2,7 +2,7 @@
 // No DOM. The wallet document is always stored encrypted; decrypted payloads live in memory only while unlocked.
 
 import * as C from './vledger-crypto.js';
-import { makeProvider } from './vledger-providers.js';
+import { makeProvider, RelayClient, ArbiterClient } from './vledger-providers.js';
 
 export const MIN_PASSPHRASE = 14;
 
@@ -263,7 +263,12 @@ export class Wallet {
     }
     const id = await this.add('message-in', { envelopeDigest: await C.messageDigest(msg), ...(from ? { from } : {}), verified, receivedAt: C.nowIso(), body, state: 'new' }, { source: 'message' });
     if (body.kind === 'suggestion') await this.addSuggestions(body, from);
-    return { id, body, from, verified };
+    let matched = false;
+    if (body.kind === 'event-offer' && !body.opening && verified) {
+      matched = await this.applyOfferReply(body.receipt);
+      if (matched) await this.setMessageState(id, 'accepted');
+    }
+    return { id, body, from, verified, matched };
   }
 
   async addSuggestions(body, from) {
@@ -287,6 +292,128 @@ export class Wallet {
       }, { source: 'device' }));
     }
     return ids;
+  }
+
+  // ---- L3: relay, card directory, receipts, arbiter ----
+
+  relayUrl() { return (this.settings().relays || [])[0] || null; }
+
+  // Send a message through the relay when one is set; returns true if sent, false if the caller should hand it over.
+  async deliver(msg) {
+    const url = this.relayUrl();
+    if (!url) return false;
+    await new RelayClient(url).send(msg);
+    return true;
+  }
+
+  // Fetch and receive everything waiting at the relay. Returns {received, dropped, matched}.
+  async checkInbox() {
+    const url = this.relayUrl();
+    if (!url) return { received: 0, dropped: 0, matched: 0 };
+    const msgs = await new RelayClient(url).inbox(this.session);
+    let received = 0, dropped = 0, matched = 0;
+    for (const m of msgs) {
+      try {
+        const r = await this.receive(m);
+        if (r.dropped) dropped++; else received++;
+        if (r.matched) matched++;
+      } catch { /* not for this wallet or damaged: skip */ }
+    }
+    return { received, dropped, matched };
+  }
+
+  async lookupCard(address) {
+    const url = this.relayUrl();
+    if (!url) return null;
+    const doc = await new RelayClient(url).getCard(address);
+    if (!doc || doc.card?.address !== address || !(await C.verifyCard(doc))) return null;
+    return doc;
+  }
+
+  async publishCard() { const url = this.relayUrl(); if (!url) throw new Error('no relay'); return new RelayClient(url).publishCard(await this.card()); }
+  async withdrawCard() { const url = this.relayUrl(); if (!url) throw new Error('no relay'); return new RelayClient(url).withdrawCard(this.session); }
+
+  // Offer an event for joint confirmation (SPEC 9, 11). Returns the message to deliver to the other party.
+  async offerEvent(eventRootId, otherRootId, { mode = 'attest', arbiter = null } = {}) {
+    const ev = this.get(eventRootId);
+    const other = this.get(otherRootId);
+    if (!other?.body.card) throw new Error('the other party has no card yet');
+    const me = this.selfContact().rootId;
+    const b = ev.body;
+    const occurredAt = String(b.occurredAt).length === 10 ? b.occurredAt + 'T00:00:00Z' : b.occurredAt;
+    const action = { salt: C.b64u(C.rand(16)), text: b.action };
+    const objects = (b.objects || []).map((o) => ({ salt: C.b64u(C.rand(16)), label: o.label, quantity: o.quantity ?? null, unit: o.unit ?? null, note: o.note ?? null }));
+    const iAmActor = b.actor === me;
+    const myRole = iAmActor ? 'actor' : (b.role === 'affected' ? 'affected' : b.role);
+    const otherRole = b.actor === otherRootId ? 'actor' : (iAmActor && (b.affected || []).includes(otherRootId) ? 'affected' : 'party');
+    const parties = [{ role: myRole, key: this.session.publicKey }, { role: otherRole, key: C.keyOfAddress(other.body.address) }];
+    const receipt = { type: 'aevri.vledger.receipt', version: 2, receiptId: C.uuid7(), occurredAt, parties,
+      action: { digest: await C.actionDigest(action), ...(b.actionType ? { type: b.actionType } : {}) },
+      objects: await Promise.all(objects.map(async (o) => ({ digest: await C.objectDigest(o) }))),
+      mandate: { mode, ...(arbiter && mode !== 'attest' ? { arbiter } : {}) } };
+    if (arbiter) receipt.arbiters = [{ party: 0, ...arbiter }];
+    const bundle = await C.signReceipt({ receipt, signatures: [] }, 0, this.session);
+    const opening = { action, objects, roles: [myRole, otherRole], occurredAt };
+    await this.correct(eventRootId, { ...b, receipt: bundle, receiptState: 'offered', receiptOpening: opening });
+    return C.sealMessage(other.body.card, { kind: 'event-offer', receipt: bundle, opening }, this.session);
+  }
+
+  // The other party accepts an offer: records the event on its own timeline, signs, and returns the reply message.
+  async acceptOffer(messageRootId) {
+    const m = this.get(messageRootId);
+    const { receipt: bundle, opening } = m.body.body;
+    const me = this.selfContact().rootId;
+    const meIdx = bundle.receipt.parties.findIndex((p) => p.key.x === this.session.publicKey.x);
+    if (meIdx < 0) throw new Error('this offer is not addressed to this wallet');
+    const otherIdx = meIdx === 0 ? 1 : 0;
+    if (await C.actionDigest(opening.action) !== bundle.receipt.action.digest) throw new Error('the opening does not match the receipt');
+    for (let i = 0; i < opening.objects.length; i++) if (await C.objectDigest(opening.objects[i]) !== bundle.receipt.objects[i]?.digest) throw new Error('the opening does not match the receipt');
+    const otherAddress = C.addressOf(bundle.receipt.parties[otherIdx].key);
+    let sender = this.contactByAddress(otherAddress);
+    let senderId = sender?.rootId;
+    if (!sender) {
+      const found = await this.lookupCard(otherAddress).catch(() => null); // the published card gives a name and the reply key
+      senderId = found ? await this.addCard(found) : await this.add('contact', { type: 'person', name: otherAddress.slice(0, 12), address: otherAddress });
+      sender = this.get(senderId);
+    }
+    const roles = opening.roles;
+    const otherIsActor = roles[otherIdx] === 'actor';
+    const myRole = roles[meIdx] === 'party' ? (otherIsActor ? 'affected' : 'witness') : roles[meIdx];
+    const signed = await C.signReceipt(JSON.parse(JSON.stringify(bundle)), meIdx, this.session);
+    const status = await C.receiptStatus(signed);
+    const evId = await this.add('event', {
+      actor: otherIsActor ? senderId : me, action: opening.action.text,
+      objects: opening.objects.map((o) => ({ label: o.label, ...(o.quantity != null ? { quantity: o.quantity } : {}), ...(o.unit ? { unit: o.unit } : {}) })),
+      affected: otherIsActor ? [me] : [senderId], role: myRole, occurredAt: opening.occurredAt, status: 'confirmed',
+      receipt: signed, receiptState: status.matched ? 'matched' : 'offered', receiptOpening: opening, stamps: [], rulings: [],
+    }, { source: 'contact' });
+    await this.setMessageState(messageRootId, 'accepted');
+    const card = sender?.body.card || (await this.lookupCard(otherAddress));
+    const reply = card ? await C.sealMessage(card, { kind: 'event-offer', receipt: signed }, this.session) : null;
+    return { eventId: evId, reply, matched: status.matched };
+  }
+
+  // A signed reply to our own offer: store the matched receipt on our event.
+  async applyOfferReply(bundle) {
+    const ev = this.list('event').find((e) => e.body.receipt?.receipt?.receiptId === bundle.receipt.receiptId);
+    if (!ev) return false;
+    if (C.canon(ev.body.receipt.receipt) !== C.canon(bundle.receipt)) {
+      await this.correct(ev.rootId, { ...ev.body, receiptState: 'disputed' });
+      return false;
+    }
+    const st = await C.receiptStatus(bundle);
+    if (!st.matched) return false;
+    await this.correct(ev.rootId, { ...ev.body, receipt: bundle, receiptState: 'matched' });
+    return true;
+  }
+
+  async stampAt(eventRootId, arbiterUrl) {
+    const ev = this.get(eventRootId);
+    const digest = await C.receiptDigest(ev.body.receipt.receipt);
+    const stamp = await new ArbiterClient(arbiterUrl).stamp(ev.body.receipt, digest);
+    if (!(await C.verifySigned(stamp, stamp.arbiter.key)) || stamp.receiptDigest !== digest) throw new Error('the stamp does not verify');
+    await this.correct(eventRootId, { ...ev.body, stamps: [...(ev.body.stamps || []), stamp] });
+    return stamp;
   }
 
   async setMessageState(rootId, state) {

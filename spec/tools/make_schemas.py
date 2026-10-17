@@ -34,6 +34,8 @@ defs = {
         'occurredAt': {'oneOf': [c('time'), c('date')]}, 'approx': {'type': 'boolean'}, 'systemId': ID,
         'registryRef': c('registryRef'), 'status': {'enum': ['confirmed', 'suggested', 'rejected']}, 'suggestedBy': ID,
         'receipt': {'$ref': 'receipt.schema.json'},
+        'receiptState': {'enum': ['offered', 'matched', 'disputed']},
+        'receiptOpening': {'type': 'object'},
         'stamps': {'type': 'array', 'items': {'$ref': 'arbiter.schema.json#/$defs/stamp'}},
         'rulings': {'type': 'array', 'items': {'$ref': 'arbiter.schema.json#/$defs/ruling'}}},
         'if': {'properties': {'status': {'const': 'suggested'}}}, 'then': {'required': ['suggestedBy']}},
@@ -144,7 +146,13 @@ body = {'oneOf': [
     {'type': 'object', 'required': ['kind', 'event'], 'properties': {
         'kind': {'const': 'request'}, 'event': event_words, 'system': LINE, 'systemRegistryUrl': {'type': 'string', 'pattern': '^https://'},
         'plan': {'type': 'object', 'properties': {'promise': TEXT, 'plannedV': {'type': 'number', 'minimum': -1, 'maximum': 1}}}}},
-    {'type': 'object', 'required': ['kind', 'receipt'], 'properties': {'kind': {'const': 'event-offer'}, 'receipt': {'$ref': 'receipt.schema.json'}}},
+    {'type': 'object', 'required': ['kind', 'receipt'], 'properties': {'kind': {'const': 'event-offer'}, 'receipt': {'$ref': 'receipt.schema.json'},
+        'opening': {'type': 'object', 'description': 'What the digests hide, for the other party only',
+                    'properties': {'action': {'type': 'object', 'required': ['salt', 'text'], 'properties': {'salt': c('b64u'), 'text': LINE}},
+                                   'objects': {'type': 'array', 'items': {'type': 'object', 'required': ['salt', 'label'], 'properties': {
+                                       'salt': c('b64u'), 'label': LINE, 'quantity': {'type': ['number', 'null']}, 'unit': {'type': ['string', 'null']}, 'note': {'type': ['string', 'null']}}}},
+                                   'roles': {'type': 'array', 'items': {'enum': ['actor', 'affected', 'user', 'witness', 'party']}},
+                                   'occurredAt': {'oneOf': [c('time'), c('date')]}}}}},
     {'type': 'object', 'required': ['kind', 'card'], 'properties': {'kind': {'const': 'card'}, 'card': {'$ref': 'card.schema.json'}}},
     {'type': 'object', 'required': ['kind', 'events'], 'properties': {'kind': {'const': 'suggestion'}, 'source': LINE,
         'events': {'type': 'array', 'minItems': 1, 'items': event_words}}},
