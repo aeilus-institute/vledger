@@ -20,10 +20,11 @@ const DB = 'aevri-vledger';
 
 function idb() {
   return new Promise((resolve, reject) => {
-    const r = indexedDB.open(DB, 2);
+    const r = indexedDB.open(DB, 3);
     r.onupgradeneeded = () => {
       if (!r.result.objectStoreNames.contains('wallets')) r.result.createObjectStore('wallets');
       if (!r.result.objectStoreNames.contains('recovery')) r.result.createObjectStore('recovery');
+      if (!r.result.objectStoreNames.contains('biometric')) r.result.createObjectStore('biometric');
     };
     r.onsuccess = () => resolve(r.result);
     r.onerror = () => reject(r.error);
@@ -57,6 +58,13 @@ export const pendingRecovery = {
   remove: (id) => tx('readwrite', (s) => s.delete(id), 'recovery'),
 };
 
+// Unlock by this device's biometrics (SPEC 18): {walletId, credentialId, salt, rpId, wrap}, kept on this device only.
+export const biometricKeys = {
+  get: (walletId) => tx('readonly', (s) => s.get(walletId), 'biometric'),
+  put: (rec) => tx('readwrite', (s) => s.put(rec, rec.walletId), 'biometric'),
+  remove: (walletId) => tx('readwrite', (s) => s.delete(walletId), 'biometric'),
+};
+
 // ---- wallet ----
 
 const DEFAULT_SETTINGS = {
@@ -83,6 +91,14 @@ export class Wallet {
 
   static async unlock(doc, passphrase, store = device) {
     const session = await C.unlockWithPassphrase(doc, passphrase);
+    const w = new Wallet(doc, session, store);
+    await w.decryptAll();
+    return w;
+  }
+
+  // Opens with the data key itself (device biometrics, SPEC 18)
+  static async openWithDek(doc, dek, store = device) {
+    const session = await C.unlockWithDek(doc, dek);
     const w = new Wallet(doc, session, store);
     await w.decryptAll();
     return w;

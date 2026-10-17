@@ -1,8 +1,9 @@
 # Value Wallet format and protocols - `aevri.vledger` 1.0
 
-Status: **draft 1.0-d6** (2026-10-17). Editor: Aeilus Value Research Institute (ÆVRI).
+Status: **draft 1.0-d7** (2026-10-18). Editor: Aeilus Value Research Institute (ÆVRI).
 Licence: CC BY 4.0 (this text), MIT (reference code and schemas). Requirements (Russian): TZ v0.2 and v0.3.
 Fixtures in `fixtures/` are produced by `reference/` (Web Crypto) and pass the independent `tools/verify_fixtures.py`.
+Changes from d6: unlock with device biometrics (section 18), kept on the device, outside the wallet document.
 Changes from d5: one-click `reaction` in assessments (section 17); `registrySystemId` in value systems.
 Changes from d5: one-click `reaction` in assessments (section 17); `registrySystemId` in value systems.
 Changes from d4 (stage L4): bridges to VET and VSS (section 16, `schema/bridge.schema.json`); `event.vssRef`;
@@ -356,3 +357,13 @@ interesting, hooked, I will apply it): the scale readers use on the institute si
 assessment; it is not converted into `v`. When the holder has goals, a wallet SHOULD offer to calibrate reaction-only
 assessments by adding `contributions`, which then give `v` as usual. A value system made from a registry keeps
 `registryUrl` and `registrySystemId`, one per system of that registry.
+
+## 18. Unlock with device biometrics (d7)
+
+A wallet MAY open on one device without the passphrase, by the device's own biometrics or PIN, using a WebAuthn
+passkey with the PRF extension made on that device (`userVerification: required`, platform authenticator). The PRF
+output for a random 32-byte salt gives `kek = HKDF-SHA-256(prf, salt 0^32, info "aevri.vledger/1|device-unlock|<walletId>|<credentialId>")`,
+and the data key is kept as `seal(kek, dek, "device-unlock", walletId, credentialId)`. The record
+`{walletId, credentialId, salt, rpId, wrap, createdAt}` stays on that device, outside the wallet document: it is never
+synced or sent to a provider, so only that device can use it. The passphrase slot stays the master key. Where the
+browser gives no PRF result, a wallet MUST NOT offer a biometric gate without a key and keeps the passphrase.

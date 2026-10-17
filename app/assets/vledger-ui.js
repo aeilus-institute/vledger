@@ -2,7 +2,8 @@
 // Timeline of events "someone did something with something or someone", contacts with addresses and QR,
 // value systems and goals, assessments with references and spent value, inbox, analytics, settings.
 
-import { Wallet, device, passphraseOk, inspectImport, pendingRecovery, REACTIONS } from './vledger-store.js';
+import { Wallet, device, passphraseOk, inspectImport, pendingRecovery, REACTIONS, biometricKeys } from './vledger-store.js';
+import * as Bio from './vledger-biometric.js';
 import { makeProvider, restoreCode, parseRestoreCode, AEVRI_URL, AEVRI_RELAY, AEVRI_ARBITER, AEVRI_REGISTRY, fetchRegistry, RelayClient } from './vledger-providers.js';
 import * as V from './vledger-value.js';
 import * as C from './vledger-crypto.js';
@@ -284,6 +285,24 @@ function unlockDialog(walletId, label, doc) {
     const pass = h('input', { type: 'password', autocomplete: 'current-password' });
     const msg = h('p', { class: 'vw-error', role: 'alert' });
     const btn = h('button', { class: 'vw-btn vw-primary', type: 'submit' }, t('unlock.go'));
+    // device biometrics first when this wallet has them here (SPEC 18); the passphrase always works
+    const bioBox = h('div', {});
+    if (Bio.available() && !doc) {
+      biometricKeys.get(walletId).then((rec) => {
+        if (!rec) return;
+        const bioBtn = h('button', { type: 'button', class: 'vw-btn vw-primary vw-bio' }, t('bio.unlock'));
+        bioBtn.addEventListener('click', async () => {
+          bioBtn.disabled = true; msg.textContent = t('bio.wait');
+          try {
+            const d = await device.get(walletId);
+            wallet = await Wallet.openWithDek(d, await Bio.unlockKey(rec));
+            close(true); touch(); render(); syncAll(true);
+          } catch { msg.textContent = t('bio.failed'); bioBtn.disabled = false; }
+        });
+        bioBox.replaceChildren(bioBtn, h('p', { class: 'vw-muted vw-small' }, t('bio.orPass')));
+        btn.classList.remove('vw-primary');
+      }).catch(() => {});
+    }
     return h('form', { onsubmit: async (e) => {
       e.preventDefault(); btn.disabled = true; msg.textContent = t('unlock.wait');
       try {
@@ -291,7 +310,7 @@ function unlockDialog(walletId, label, doc) {
         pass.value = '';
         close(true); touch(); render(); syncAll(true);
       } catch { msg.textContent = t('unlock.wrong'); btn.disabled = false; }
-    } }, field(t('unlock.pass'), pass), msg, h('div', { class: 'vw-actions' }, btn));
+    } }, bioBox, field(t('unlock.pass'), pass), msg, h('div', { class: 'vw-actions' }, btn));
   });
 }
 
@@ -1588,6 +1607,32 @@ function relaySection() {
   ];
 }
 
+// Device biometrics in settings (SPEC 18): on where the browser gives a key (PRF), otherwise the passphrase as before
+function bioSection() {
+  const box = h('div', { class: 'vw-card' }, h('p', { class: 'vw-muted' }, t('bio.checking')));
+  const draw = async () => {
+    if (!Bio.available()) { box.replaceChildren(h('strong', {}, t('bio.title')), h('p', { class: 'vw-hint' }, t('bio.unsupported'))); return; }
+    const rec = await biometricKeys.get(wallet.id).catch(() => null);
+    const msg = h('p', { class: 'vw-error', role: 'alert' });
+    if (rec) {
+      box.replaceChildren(h('strong', {}, t('bio.title')), h('p', {}, t('bio.on', { date: rec.createdAt.slice(0, 10) })),
+        h('div', { class: 'vw-actions' }, h('button', { class: 'vw-btn', onclick: async () => { await biometricKeys.remove(wallet.id); toast(t('bio.offDone')); draw(); } }, t('bio.off'))),
+        h('p', { class: 'vw-hint' }, t('bio.offHint')));
+      return;
+    }
+    box.replaceChildren(h('strong', {}, t('bio.title')), h('p', { class: 'vw-hint' }, t('bio.lead')), msg,
+      h('div', { class: 'vw-actions' }, h('button', { class: 'vw-btn vw-primary', onclick: async () => {
+        msg.textContent = t('bio.wait');
+        try {
+          await biometricKeys.put(await Bio.enroll(wallet.session, { label: wallet.doc.extensions.label || t('app.name') }));
+          toast(t('bio.onDone')); draw();
+        } catch (e) { msg.textContent = e.code === 'no-prf' ? t('bio.noPrf') : t('bio.failed'); }
+      } }, t('bio.enable'))));
+  };
+  draw();
+  return box;
+}
+
 function tabSettings() {
   const s = wallet.settings();
   const req = s.requests || {};
@@ -1637,6 +1682,7 @@ function tabSettings() {
       h('button', { class: 'vw-btn', onclick: () => { if (confirm(t('set.readableWarn'))) download(`${slug(wallet.doc.extensions.label)}_${today()}_READABLE.json`, wallet.exportReadable()); } }, t('set.exportRead')),
       h('button', { class: 'vw-btn', onclick: importDialog }, t('set.import'))),
     h('h2', {}, t('set.security')),
+    bioSection(),
     h('div', { class: 'vw-actions' },
       h('button', { class: 'vw-btn', onclick: async () => { const p = await wallet.verify(); toast(p.length ? t('set.chainBad', { n: p.length }) : t('set.chainOk')); } }, t('set.verify')),
       h('button', { class: 'vw-btn', onclick: passDialog }, t('set.changePass')),
@@ -1644,7 +1690,7 @@ function tabSettings() {
     h('h2', {}, t('set.danger')),
     h('button', { class: 'vw-btn vw-danger', onclick: async () => {
       if (!confirm(t('set.removeConfirm'))) return;
-      await guard(() => device.remove(wallet.id)); lockNow(); toast(t('set.removed'));
+      await guard(() => device.remove(wallet.id)); await biometricKeys.remove(wallet.id).catch(() => {}); lockNow(); toast(t('set.removed'));
     } }, t('set.remove')),
     h('p', { class: 'vw-muted vw-small' }, t('set.about', { id: wallet.id, n: wallet.doc.records.length })),
   ];

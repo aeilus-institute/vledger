@@ -4,6 +4,7 @@ import { Wallet, device, passphraseOk, inspectImport } from '../assets/vledger-s
 import * as V from '../assets/vledger-value.js';
 import * as C from '../assets/vledger-crypto.js';
 import { qrMatrix } from '../assets/vledger-qr.js';
+import * as Bio from '../assets/vledger-biometric.js';
 
 const out = document.getElementById('out');
 const results = [];
@@ -158,6 +159,29 @@ async function run() {
   ok(rs.bySystem.news.assessed === 2 && rs.bySystem.research.events === 2 && rs.bySystem.research.assessed === 1 && rs.byMonth['2026-10'].assessed === 2 && rs.byMonth['2026-09'].dist[100] === 1,
     'reaction stats by system and by month');
   ok(rs.best.map((x) => x.id).join() === 'a,c' && rs.wasted.map((x) => x.id).join() === 'b', 'the best and the wasted lists');
+
+  // Unlock with device biometrics (SPEC 18), against an emulated platform authenticator with PRF
+  const mockAuth = (secretBytes, { prf = true, prfAtCreate = false } = {}) => {
+    const rawId = C.rand(16);
+    const prfOf = async (salt) => new Uint8Array(await crypto.subtle.sign('HMAC', await crypto.subtle.importKey('raw', secretBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']), salt));
+    return {
+      create: async (o) => ({ rawId: rawId.buffer, getClientExtensionResults: () => (prf ? { prf: { enabled: true, ...(prfAtCreate ? { results: { first: { then: undefined } } } : {}) } } : {}) }),
+      get: async (o) => ({ getClientExtensionResults: () => (prf ? { prf: { results: { first: null } } } : {}), _o: o, _p: prf ? await prfOf(o.publicKey.extensions.prf.eval.first) : null }),
+      prfOf,
+    };
+  };
+  const auth = (secret, opts) => { const m = mockAuth(secret, opts); return { create: m.create, get: async (o) => { const r = await m.get(o); const out = r._p; return { getClientExtensionResults: () => (out ? { prf: { results: { first: out.buffer } } } : {}) }; } }; };
+  const secret = C.rand(32);
+  const bw = await Wallet.create('biometric test wallet passphrase', { label: 'Bio', store: null, iterations: 1000 });
+  const rec = await Bio.enroll(bw.session, { rpId: 'localhost', auth: auth(secret) });
+  ok(rec.walletId === bw.id && rec.wrap.ct && !JSON.stringify(bw.doc).includes(rec.credentialId), 'biometric unlock record is made and stays outside the wallet document');
+  const dek = await Bio.unlockKey(rec, { auth: auth(secret) });
+  const bw2 = await Wallet.openWithDek(JSON.parse(JSON.stringify(bw.doc)), dek, null);
+  ok(bw2.address === bw.address && bw2.list('contact').length === 1, 'the device key opens the same wallet without the passphrase');
+  let wrongKey = false; try { await Bio.unlockKey(rec, { auth: auth(C.rand(32)) }); } catch { wrongKey = true; }
+  ok(wrongKey, 'another device (another PRF secret) cannot open it');
+  let noPrf = null; try { await Bio.enroll(bw.session, { rpId: 'localhost', auth: auth(secret, { prf: false }) }); } catch (e) { noPrf = e.code; }
+  ok(noPrf === 'no-prf', 'without PRF nothing is enabled (the passphrase stays)');
 
   const failed = results.filter((r) => !r.ok).length;
   document.getElementById('sum').textContent = failed ? `${failed} of ${results.length} failed` : `all ${results.length} passed`;

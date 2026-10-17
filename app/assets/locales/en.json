@@ -614,5 +614,20 @@
   "an.rxQueue": "Assess the other {n} one by one",
   "an.byGoals": "Value by your goals",
   "an.rxCol.useful": "Useful",
-  "an.rxCol.wasted": "Wasted"
+  "an.rxCol.wasted": "Wasted",
+  "bio.title": "Unlock with this device",
+  "bio.lead": "Open the wallet on this device with your fingerprint, face or device PIN instead of the passphrase. The passphrase still works and stays the key for other devices.",
+  "bio.enable": "Turn on",
+  "bio.on": "On for this device since {date}.",
+  "bio.off": "Turn off",
+  "bio.offDone": "Unlock with this device is off",
+  "bio.offHint": "The passkey stays in your device settings; you can delete it there.",
+  "bio.onDone": "Unlock with this device is on",
+  "bio.unsupported": "This browser cannot give the wallet a key from your biometrics, so the wallet opens with the passphrase.",
+  "bio.noPrf": "This browser or device does not give a key from biometrics (PRF). The wallet keeps opening with the passphrase.",
+  "bio.failed": "The device did not confirm. Try again or use the passphrase.",
+  "bio.wait": "Waiting for your device...",
+  "bio.unlock": "Unlock with this device",
+  "bio.orPass": "or with the passphrase:",
+  "bio.checking": "Checking this device..."
 }
