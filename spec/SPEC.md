@@ -1,8 +1,10 @@
 # Value Wallet format and protocols - `aevri.vledger` 1.0
 
-Status: **draft 1.0-d5** (2026-10-17). Editor: Aeilus Value Research Institute (ÆVRI).
+Status: **draft 1.0-d6** (2026-10-17). Editor: Aeilus Value Research Institute (ÆVRI).
 Licence: CC BY 4.0 (this text), MIT (reference code and schemas). Requirements (Russian): TZ v0.2 and v0.3.
 Fixtures in `fixtures/` are produced by `reference/` (Web Crypto) and pass the independent `tools/verify_fixtures.py`.
+Changes from d5: one-click `reaction` in assessments (section 17); `registrySystemId` in value systems.
+Changes from d5: one-click `reaction` in assessments (section 17); `registrySystemId` in value systems.
 Changes from d4 (stage L4): bridges to VET and VSS (section 16, `schema/bridge.schema.json`); `event.vssRef`;
 the `vet` result in assessments; `settings.bridges`.
 Changes from d3 (stage L3): `opening` in event offers; the optional card directory of relays; the institute relay
@@ -338,3 +340,19 @@ creates the wallet inside the frame as usual; the passphrase never leaves the fr
 `summary` is what the holder allowed (`settings.bridges.vss.share`): by default `"fact"`, that is `{occurredAt,
 role, assessed: boolean}`; with `"value"` also `{v, spentV, phase}` of the latest assessment. VSS shows transfers as
 their own layer and never adds them to its planned VET estimate. Estimates stay in the wallet; VSS never edits them.
+
+## 17. One-click reactions (d6)
+
+An assessment MAY carry `reaction`, one of -100, -20, 0, 20, 100, 500 (harmed me, lost my time, neutral,
+interesting, hooked, I will apply it): the scale readers use on the institute site. A reaction alone is a complete
+assessment; it is not converted into `v`. When the holder has goals, a wallet SHOULD offer to calibrate reaction-only
+assessments by adding `contributions`, which then give `v` as usual. A value system made from a registry keeps
+`registryUrl` and `registrySystemId`, one per system of that registry.
+
+## 17. One-click reactions (d6)
+
+An assessment MAY carry `reaction`, one of -100, -20, 0, 20, 100, 500 (harmed me, lost my time, neutral,
+interesting, hooked, I will apply it): the scale readers use on the institute site. A reaction alone is a complete
+assessment; it is not converted into `v`. When the holder has goals, a wallet SHOULD offer to calibrate reaction-only
+assessments by adding `contributions`, which then give `v` as usual. A value system made from a registry keeps
+`registryUrl` and `registrySystemId`, one per system of that registry.

@@ -22,7 +22,7 @@ defs = {
         'members': {'type': 'array', 'items': ID}}},
     'valueSystem': {'type': 'object', 'required': ['title', 'W', 'status'], 'properties': {
         'title': LINE, 'W': {'type': 'number', 'exclusiveMinimum': 0}, 'status': {'enum': ['active', 'dropped']},
-        'registryUrl': {'type': 'string', 'pattern': '^https://'}, 'note': TEXT}},
+        'registryUrl': {'type': 'string', 'pattern': '^https://'}, 'registrySystemId': {'type': 'string', 'maxLength': 60}, 'note': TEXT}},
     'goal': {'type': 'object', 'required': ['title', 'S', 'status'], 'properties': {
         'title': LINE, 'systemId': ID, 'S': {'type': 'number', 'exclusiveMinimum': 0}, 'N': {'type': 'number', 'exclusiveMinimum': 0},
         'unit': {'type': 'string', 'maxLength': 40}, 'status': {'enum': ['active', 'reached', 'dropped']},
@@ -57,7 +57,7 @@ defs = {
         'contributions': {'type': 'array', 'items': contrib}, 'spent': {'type': 'array', 'items': contrib},
         'v': {'type': 'number'}, 'spentV': {'type': 'number', 'minimum': 0}, 'planCount': {'type': 'number', 'minimum': 0, 'maximum': 1},
         'reference': {'type': 'boolean'}, 'confidence': {'enum': ['low', 'medium', 'high']}, 'reasons': TEXT,
-        'checkAfter': c('date'),
+        'checkAfter': c('date'), 'reaction': {'enum': [-100, -20, 0, 20, 100, 500]},
         'vet': {'type': 'object', 'required': ['snapshotHash'], 'properties': {'boardId': {'type': 'string'}, 'resultId': {'type': 'string'}, 'snapshotHash': c('sha256'),
             'revision': {'type': 'number'}, 'totals': {'type': 'object'}, 'axes': {'type': 'object'}, 'receivedAt': c('time'), 'boardSnapshot': {'type': 'object'}}}}},
     'fact': {'type': 'object', 'required': ['text', 'certainty'], 'properties': {

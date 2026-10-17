@@ -2,6 +2,9 @@
 // No DOM. The wallet document is always stored encrypted; decrypted payloads live in memory only while unlocked.
 
 import * as C from './vledger-crypto.js';
+
+// One-click reactions, the scale readers use on the institute site (SPEC 17)
+export const REACTIONS = [-100, -20, 0, 20, 100, 500];
 import { makeProvider, RelayClient, ArbiterClient } from './vledger-providers.js';
 
 export const MIN_PASSPHRASE = 14;
@@ -240,6 +243,26 @@ export class Wallet {
   // publisher's site, adds a realized assessment with that reaction as own score (owner, 2026-10-17). Evaluated items
   // become "I read it" events on the date of the reaction; the others "the publisher published it" on the publication
   // date. Running it again adds only what is new. Returns {events, assessments, updated}.
+  // The wallet's value system for one system of a registry (SPEC 17): one per registry system, made on first use.
+  // A system made by an earlier version for the whole registry is kept and becomes the one of its first system.
+  async registrySystem(reg, systemId) {
+    const all = this.list('value-system').filter((s) => s.body.registryUrl === reg.registryUrl);
+    const hit = all.find((s) => s.body.registrySystemId === systemId);
+    if (hit) return hit.rootId;
+    const rs = (reg.systems || []).find((s) => s.systemId === systemId);
+    const legacy = all.find((s) => !s.body.registrySystemId && s.body.title === (rs?.title || ''));
+    if (legacy) { await this.correct(legacy.rootId, { ...legacy.body, registrySystemId: systemId }); return legacy.rootId; }
+    return this.add('value-system', { title: rs?.title || systemId || reg.owner.card.name || 'Registry', W: 1, status: 'active', registryUrl: reg.registryUrl, registrySystemId: systemId }, { source: 'registry' });
+  }
+
+  // One-click reaction (SPEC 17): sets the reaction of the realized assessment of an event, creating it if needed.
+  async react(eventRootId, value) {
+    if (!REACTIONS.includes(value)) throw new Error('unknown reaction');
+    const cur = this.list('assessment').filter((a) => a.body.eventId === eventRootId && a.body.phase === 'realized').pop();
+    if (cur) return this.correct(cur.rootId, { ...cur.body, reaction: value });
+    return this.add('assessment', { eventId: eventRootId, phase: 'realized', confidence: 'medium', reference: false, contributions: [], spent: [], reaction: value });
+  }
+
   async importRegistryItems(doc, evaluations = [], { unit = 'ÆVRI reaction', today } = {}) {
     const reg = doc.registry;
     const day = today || C.nowIso().slice(0, 10);
@@ -248,8 +271,6 @@ export class Wallet {
     const payloadHash = await C.hashJson(doc);
     if (!imp) await this.add('import', { origin: 'url', originId: reg.registryUrl, payload: doc, payloadHash }, { source: 'registry' });
     else if (imp.body.payloadHash !== payloadHash) await this.correct(imp.rootId, { ...imp.body, payload: doc, payloadHash });
-    let sys = this.list('value-system').find((s) => s.body.registryUrl === reg.registryUrl);
-    const sysId = sys ? sys.rootId : await this.add('value-system', { title: reg.owner.card.name || 'Registry', W: 1, status: 'active', registryUrl: reg.registryUrl }, { source: 'registry' });
     const me = this.selfContact().rootId;
     const evals = new Map(evaluations.filter((e) => e && typeof e.itemId === 'string').map((e) => [e.itemId, e]));
     const have = new Map(this.list('event').filter((e) => e.body.registryRef?.registryUrl === reg.registryUrl).map((e) => [e.body.registryRef.itemId, e]));
@@ -259,6 +280,7 @@ export class Wallet {
       const ev = evals.get(it.itemId);
       const rated = ev && typeof ev.value === 'number';
       const ref = { registryUrl: reg.registryUrl, itemId: it.itemId, owner: reg.owner.card.address };
+      const sysId = await this.registrySystem(reg, it.system);
       const read = { role: 'user', actor: me, action: (it.actions || [])[0] || 'read', occurredAt: (ev?.at || '').slice(0, 10) || day };
       let cur = have.get(it.itemId);
       if (!cur) {
@@ -267,17 +289,24 @@ export class Wallet {
         const id = await this.add('event', body, { source: rated ? 'aevri.site' : 'registry' });
         cur = this.get(this.rootOf(id));
         out.events++;
-      } else if (rated && cur.body.role === 'witness' && cur.body.action === 'published') {
-        await this.correct(cur.rootId, { ...cur.body, ...read });
-        out.updated++;
+      } else {
+        const fix = {};
+        if (rated && cur.body.role === 'witness' && cur.body.action === 'published') Object.assign(fix, read);
+        if (cur.body.systemId !== sysId) fix.systemId = sysId; // earlier imports put every item into one system
+        if (Object.keys(fix).length) { await this.correct(cur.rootId, { ...cur.body, ...fix }); out.updated++; }
       }
       if (rated && !assessed.has(cur.rootId)) {
-        const body = { eventId: cur.rootId, phase: 'realized', confidence: 'medium', reference: false, contributions: [], spent: [], ownScore: { value: ev.value, unit } };
-        if (ev.label) body[ev.value < 0 ? 'lost' : 'gained'] = [String(ev.label).slice(0, 300)];
+        const body = { eventId: cur.rootId, phase: 'realized', confidence: 'medium', reference: false, contributions: [], spent: [] };
+        if (REACTIONS.includes(ev.value)) body.reaction = ev.value; else body.ownScore = { value: ev.value, unit };
         if (ev.comment) body.reasons = String(ev.comment).slice(0, 2000);
         await this.add('assessment', body, { source: 'aevri.site' });
         out.assessments++;
       }
+    }
+    // a system an earlier version made for the whole registry is withdrawn once nothing refers to it
+    for (const sys of this.list('value-system').filter((x) => x.body.registryUrl === reg.registryUrl && !x.body.registrySystemId)) {
+      const used = this.list('event').some((e) => e.body.systemId === sys.rootId) || this.list('goal').some((g) => g.body.systemId === sys.rootId);
+      if (!used) { await this.withdraw(sys.rootId); out.updated++; }
     }
     return out;
   }

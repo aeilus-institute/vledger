@@ -147,12 +147,19 @@ async function run() {
   const ie2 = W.get(e1[0].rootId).body;
   const a2 = W.list('assessment');
   ok(n2.events === 0 && n2.updated === 1 && ie2.role === 'user' && ie2.occurredAt === '2026-10-10', 'a later reaction turns it into "I read it" on the date of the reaction');
-  ok(a2.length === 1 && a2[0].body.ownScore.value === 500 && a2[0].body.gained[0].startsWith('Brilliant') && a2[0].body.reasons === 'Used it on Monday' && a2[0].body.v === undefined, 'the reaction becomes an assessment with its own score, never a converted value');
+  ok(a2.length === 1 && a2[0].body.reaction === 500 && a2[0].body.reasons === 'Used it on Monday' && a2[0].body.v === undefined, 'the reaction becomes a one-click assessment (SPEC 17), never a converted value');
   const n3 = await W.importRegistryItems(rdoc, [{ itemId: 'how-to-assess-value', value: 500 }]);
   ok(n3.events === 0 && n3.assessments === 0 && W.list('event').length === 1 && W.list('assessment').length === 1, 'running it again adds nothing twice');
   const W2 = await wallet('Importer2');
   await W2.importRegistryItems(rdoc, [{ itemId: 'how-to-assess-value', value: -20, label: 'Just lost my time', at: '2026-10-11T00:00:00Z' }]);
-  ok(W2.list('assessment')[0].body.lost[0] === 'Just lost my time' && W2.list('event')[0].body.role === 'user', 'a negative reaction is recorded as lost');
+  ok(W2.list('assessment')[0].body.reaction === -20 && W2.list('event')[0].body.role === 'user', 'a negative reaction is kept as it is');
+  const sys = W.list('value-system').filter((x) => x.body.registryUrl === rdoc.registry.registryUrl);
+  ok(sys.length === 1 && sys[0].body.registrySystemId === 'research' && W.list('event')[0].body.systemId === sys[0].rootId, 'each registry system gets its own value system');
+  const evq = W.list('event')[0].rootId;
+  await W.react(evq, 100);
+  ok(W.list('assessment').length === 1 && W.list('assessment')[0].body.reaction === 100, 'a one-click reaction changes the existing realized assessment, never adds a second one');
+  let bad = false; try { await W.react(evq, 7); } catch { bad = true; }
+  ok(bad, 'only the six reactions of the scale are accepted');
 
   // Withdraw the card
   await B.withdrawCard();

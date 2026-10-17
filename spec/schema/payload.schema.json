@@ -419,6 +419,10 @@
           "type": "string",
           "pattern": "^https://"
         },
+        "registrySystemId": {
+          "type": "string",
+          "maxLength": 60
+        },
         "note": {
           "$ref": "common.schema.json#/$defs/text"
         }
@@ -892,6 +896,16 @@
         },
         "checkAfter": {
           "$ref": "common.schema.json#/$defs/date"
+        },
+        "reaction": {
+          "enum": [
+            -100,
+            -20,
+            0,
+            20,
+            100,
+            500
+          ]
         },
         "vet": {
           "type": "object",

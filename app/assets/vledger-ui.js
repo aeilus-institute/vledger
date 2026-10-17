@@ -2,7 +2,7 @@
 // Timeline of events "someone did something with something or someone", contacts with addresses and QR,
 // value systems and goals, assessments with references and spent value, inbox, analytics, settings.
 
-import { Wallet, device, passphraseOk, inspectImport, pendingRecovery } from './vledger-store.js';
+import { Wallet, device, passphraseOk, inspectImport, pendingRecovery, REACTIONS } from './vledger-store.js';
 import { makeProvider, restoreCode, parseRestoreCode, AEVRI_URL, AEVRI_RELAY, AEVRI_ARBITER, AEVRI_REGISTRY, fetchRegistry, RelayClient } from './vledger-providers.js';
 import * as V from './vledger-value.js';
 import * as C from './vledger-crypto.js';
@@ -180,6 +180,25 @@ const systemsForValue = () => systems().map((s) => ({ id: s.rootId, W: s.body.W,
 const goalsForValue = () => wallet.list('goal').map((g) => ({ id: g.rootId, S: g.body.S, N: g.body.N ?? g.body.S, status: g.body.status, systemId: g.body.systemId, title: g.body.title }));
 const events = (all = false) => wallet.list('event').filter((e) => all || e.body.status === 'confirmed');
 const assessments = () => wallet.list('assessment');
+// A reaction of an assessment; assessments imported before SPEC 17 kept it as an own score in reaction units
+const reactionOf = (b) => (REACTIONS.includes(b?.reaction) ? b.reaction
+  : (b?.ownScore && /ÆVRI/.test(b.ownScore.unit || '') && REACTIONS.includes(b.ownScore.value) ? b.ownScore.value : null));
+const hasGoals = () => wallet.list('goal').some((g) => g.body.status === 'active');
+const needsCalibration = (a) => reactionOf(a.body) !== null && !(a.body.contributions || []).length;
+
+function reactionRow(evRootId, current, after) {
+  return h('div', { class: 'vw-reacts', role: 'group', 'aria-label': t('rx.q') }, REACTIONS.map((v) =>
+    h('button', { type: 'button', class: 'vw-react' + (v === current ? ' is-on' : '') + (v < 0 ? ' is-neg' : ''), 'aria-pressed': String(v === current),
+      onclick: async () => { const id = await guard(() => wallet.react(evRootId, v)); if (id) { if (after) after(v); else { toast(t('rx.saved', { r: t('rx.' + v) })); render(); } } } }, t('rx.' + v))));
+}
+
+// The registry item behind an event (its promise and link), from the stored copy of the registry
+function registryItem(ev) {
+  const ref = ev.body.registryRef;
+  if (!ref) return null;
+  const imp = wallet.list('import').find((i) => i.body.originId === ref.registryUrl);
+  return (imp?.body.payload?.registry?.items || []).find((x) => x.itemId === ref.itemId) || null;
+}
 const nameOf = (id) => (id === selfId() ? t('me.subj') : wallet.get(id)?.body.name || t('cp.unknown'));
 const objName = (id) => (id === selfId() ? t('me.obj') : wallet.get(id)?.body.name || t('cp.unknown'));
 // The registry owner is the other side of an event with a registry object (TZ v0.3 EV-3).
@@ -572,6 +591,16 @@ function tabTimeline() {
       sel('assessed', [['yes', t('f.assessed.yes')], ['no', t('f.assessed.no')]]),
       sel('contact', contacts().filter((c) => c.body.type !== 'self').map((c) => [c.rootId, c.body.name]))),
   ];
+  const assessedIds = new Set(as.map((a) => a.body.eventId));
+  const open = events().filter((e) => !assessedIds.has(e.rootId));
+  const calib = hasGoals() ? as.filter(needsCalibration) : [];
+  if (open.length || calib.length) {
+    out.push(h('div', { class: 'vw-card vw-notice vw-row' },
+      open.length ? h('span', {}, t('q.left', { n: open.length })) : null,
+      open.length ? h('button', { class: 'vw-btn vw-primary', onclick: () => queueDialog(open.map((e) => e.rootId)) }, t('q.go')) : null,
+      calib.length ? h('span', {}, t('cal.left', { n: calib.length })) : null,
+      calib.length ? h('button', { class: 'vw-btn', onclick: () => calibrate(calib) }, t('cal.go')) : null));
+  }
   if (due.length) {
     out.push(h('div', { class: 'vw-card vw-due' }, h('strong', {}, t('ev.due')),
       due.map((a) => h('div', { class: 'vw-row' }, h('span', {}, phrase(wallet.get(a.body.eventId) || { body: {} })),
@@ -597,24 +626,27 @@ function eventCard(ev, as) {
   const latest = retro || realized;
   const eff = latest && latest.body.spentV > 0 ? latest.body.v / latest.body.spentV : null;
   const target = shareTarget(ev);
+  const item = registryItem(ev);
   return h('article', { class: 'vw-card' },
     h('div', { class: 'vw-row' }, h('h3', {}, phrase(ev)),
       h('span', { class: 'vw-chips' }, h('span', { class: 'vw-chip' }, t('role.' + b.role)), b.systemId ? h('span', { class: 'vw-chip vw-chip-sys' }, sysTitle(b.systemId)) : null,
         b.registryRef ? h('span', { class: 'vw-chip' }, t('ev.fromReg')) : null,
         b.receiptState ? h('span', { class: 'vw-chip' + (b.receiptState === 'matched' ? ' vw-chip-sys' : '') }, t('rc.state.' + b.receiptState) + ((b.stamps || []).length ? ' · ' + t('rc.stamped') : '')) : null)),
-    h('div', { class: 'vw-phases' },
-      h('div', { class: 'vw-phase' }, h('div', { class: 'vw-muted' }, t('phase.plan')),
-        plans.length ? plans.map((p) => h('div', { class: 'vw-plan' }, `${p.body.author === selfId() ? t('plan.mine') : nameOf(p.body.author)}: ${p.body.promise}`,
-          h('div', { class: 'vw-muted vw-small' }, t('plan.counted', { f: pct(V.planFactor(s, { contactId: p.body.author, systemId: b.systemId })) })))) : h('span', { class: 'vw-muted' }, '-')),
-      h('div', { class: 'vw-phase' }, h('div', { class: 'vw-muted' }, t('phase.realized')), realized ? assessmentView(realized) : h('span', { class: 'vw-muted' }, '-')),
-      h('div', { class: 'vw-phase' }, h('div', { class: 'vw-muted' }, t('phase.retro')), retro ? assessmentView(retro) : h('span', { class: 'vw-muted' }, realized ? '-' : t('phase.retroAfter')))),
+    // One click is a whole assessment (owner, 2026-10-17); details, goals and phases only when there is something
+    item && ((item.plan?.promise && !plans.length) || item.url) ? h('p', { class: 'vw-muted vw-small' }, item.plan?.promise && !plans.length ? t('reg.promise', { p: item.plan.promise }) + ' ' : '',
+      item.url ? h('a', { href: item.url, target: '_blank', rel: 'noopener' }, t('ev.openItem')) : null) : null,
+    reactionRow(ev.rootId, realized ? reactionOf(realized.body) : null),
+    plans.length ? plans.map((p) => h('div', { class: 'vw-plan' }, `${t('phase.plan')}: ${p.body.author === selfId() ? t('plan.mine') : nameOf(p.body.author)}: ${p.body.promise}`,
+      h('span', { class: 'vw-muted vw-small' }, ' · ' + t('plan.counted', { f: pct(V.planFactor(s, { contactId: p.body.author, systemId: b.systemId })) })))) : null,
+    realized ? assessmentView(realized) : null,
+    retro ? h('div', {}, h('div', { class: 'vw-muted vw-small' }, t('phase.retro')), assessmentView(retro)) : null,
+    realized && hasGoals() && needsCalibration(realized) ? h('button', { class: 'vw-link', onclick: () => assessDialog(ev.rootId, realized) }, t('cal.one')) : null,
     (b.rulings || []).map((r) => h('p', { class: 'vw-ruling' }, h('span', { class: 'vw-chip' + (r.binding ? ' vw-chip-sys' : '') }, t(r.binding ? 'cs.binding' : 'cs.opinion')), ' ', t('cs.ruling', { decision: r.decision }))),
     (b.cases || []).some((c) => c.status === 'open') ? h('p', { class: 'vw-muted vw-small' }, t('cs.open')) : null,
     (b.cases || []).filter((c) => c.status === 'declined').map((c) => h('p', { class: 'vw-muted vw-small' }, t('cs.declined', { reason: c.reason || '-' }))),
     eff !== null ? h('p', { class: 'vw-muted vw-small' }, t('ev.efficiency', { e: num(eff), net: pct(latest.body.v - latest.body.spentV) })) : null,
     h('div', { class: 'vw-actions' },
-      h('button', { class: 'vw-btn', onclick: () => assessDialog(ev.rootId, null, { phase: realized ? 'retro' : 'realized' }) }, t(realized ? 'ev.assessLater' : 'ev.assess')),
-      h('button', { class: 'vw-btn', onclick: () => planDialog(ev.rootId) }, t('ev.plan')),
+      h('button', { class: 'vw-btn vw-ghost', onclick: () => assessDialog(ev.rootId, realized || null, { phase: 'realized' }) }, t('rx.more')),
       latest && target ? h('button', { class: 'vw-btn', onclick: () => shareDialog(ev, latest, target) }, t('ev.share', { name: nameOf(target) })) : null,
       !b.receiptState && receiptTarget(ev) ? h('button', { class: 'vw-btn', onclick: () => confirmDialog(ev, receiptTarget(ev)) }, t('rc.btn')) : null,
       b.receiptState === 'matched' && !(b.stamps || []).length ? h('button', { class: 'vw-btn vw-ghost', onclick: async () => {
@@ -626,21 +658,64 @@ function eventCard(ev, as) {
         const done = await guard(() => wallet.refreshCases(ev.rootId));
         if (done) { toast(done.length ? t('cs.got') : t('cs.none')); render(); }
       } }, t('cs.check')) : null,
-      h('button', { class: 'vw-btn vw-ghost', onclick: () => eventDialog(ev) }, t('edit')),
-      itemMenu(ev)));
+      h('details', { class: 'vw-more' }, h('summary', { class: 'vw-btn vw-ghost', 'aria-label': t('more') }, '⋯'),
+        h('div', { class: 'vw-more-menu' },
+          realized ? h('button', { class: 'vw-btn vw-ghost', onclick: () => assessDialog(ev.rootId, null, { phase: 'retro' }) }, t('ev.assessLater')) : null,
+          h('button', { class: 'vw-btn vw-ghost', onclick: () => planDialog(ev.rootId) }, t('ev.plan')),
+          h('button', { class: 'vw-btn vw-ghost', onclick: () => eventDialog(ev) }, t('edit')),
+          itemMenu(ev)))));
+}
+
+// One event at a time: a reaction saves it and shows the next (owner, 2026-10-17)
+function queueDialog(ids) {
+  let i = 0, done = 0;
+  return modal(t('q.title'), (close) => {
+    const box = h('div', { class: 'vw-queue' });
+    const show = () => {
+      while (i < ids.length && !wallet.get(ids[i])) i++;
+      if (i >= ids.length) { close(true); toast(t('q.done', { n: done })); render(); return; }
+      const ev = wallet.get(ids[i]);
+      const it = registryItem(ev);
+      box.replaceChildren(...[
+        h('p', { class: 'vw-muted vw-small' }, t('q.pos', { i: i + 1, n: ids.length }) + (ev.body.systemId ? ' · ' + sysTitle(ev.body.systemId) : '') + ' · ' + String(ev.body.occurredAt).slice(0, 10)),
+        h('h3', {}, phrase(ev)),
+        it?.plan?.promise ? h('p', { class: 'vw-muted' }, t('reg.promise', { p: it.plan.promise })) : null,
+        it?.url ? h('p', {}, h('a', { href: it.url, target: '_blank', rel: 'noopener' }, t('ev.openItem'))) : null,
+        h('p', { class: 'vw-label' }, t('rx.q')),
+        reactionRow(ev.rootId, null, () => { done++; i++; show(); }),
+        h('div', { class: 'vw-actions' },
+          h('button', { class: 'vw-btn', onclick: () => { i++; show(); } }, t('q.skip')),
+          h('button', { class: 'vw-btn vw-ghost', onclick: () => { close(true); render(); } }, t('q.stop')))].filter(Boolean));
+    };
+    show();
+    return box;
+  });
+}
+
+// When goals appear, reaction-only assessments are calibrated by them one by one
+async function calibrate(list) {
+  for (const a of list) {
+    const cur = wallet.get(a.rootId);
+    if (!cur) continue;
+    const r = await assessDialog(cur.body.eventId, cur);
+    if (!r) break;
+  }
+  render();
 }
 
 function assessmentView(a) {
   const b = a.body;
+  const rx = reactionOf(b);
   return h('div', { class: 'vw-assess' },
+    rx !== null && b.phase === 'retro' ? h('div', { class: 'vw-chip' + (rx < 0 ? ' vw-neg' : '') }, t('rx.' + rx)) : null,
     typeof b.v === 'number' && (b.contributions || []).length ? h('div', { class: b.v < 0 ? 'vw-v vw-neg' : 'vw-v' }, t(b.v < 0 ? 'val.short.harm' : 'val.short', { v: pct(Math.abs(b.v)) })) : null,
     b.spentV > 0 ? h('div', { class: 'vw-muted vw-small' }, t('val.spentShort', { v: pct(b.spentV) })) : null,
     b.vet ? h('div', { class: 'vw-muted vw-small' }, t('vet.line', { out: num(b.vet.totals?.sumOut ?? 0), in: num(b.vet.totals?.sumIn ?? 0), n: b.vet.totals?.count ?? 0 })) : null,
-    b.ownScore ? h('div', { class: 'vw-muted vw-small' }, t('as.ownShow', { v: b.ownScore.value.toLocaleString(lang), u: b.ownScore.unit || '' })) : null,
+    b.ownScore && rx === null ? h('div', { class: 'vw-muted vw-small' }, t('as.ownShow', { v: b.ownScore.value.toLocaleString(lang), u: b.ownScore.unit || '' })) : null,
     b.reference ? h('div', { class: 'vw-chip' }, t('as.isReference')) : null,
     (b.gained || []).map((x) => h('div', { class: 'vw-gained' }, '+ ' + x)),
     (b.lost || []).map((x) => h('div', { class: 'vw-lost' }, '- ' + x)),
-    h('button', { class: 'vw-link', onclick: () => assessDialog(b.eventId, a) }, t('edit')));
+    b.reasons ? h('div', { class: 'vw-muted vw-small' }, b.reasons) : null);
 }
 
 function itemMenu(item) {
@@ -795,9 +870,7 @@ async function addFromRegistry(doc, it, origin = 'file') {
   const imp = wallet.list('import').find((i) => i.body.originId === reg.registryUrl);
   if (!imp) await wallet.add('import', { origin, originId: reg.registryUrl, payload: doc, payloadHash: await C.hashJson(doc) }, { source: 'registry' });
   else if ((imp.body.payload?.registry?.updatedAt || '') < (reg.updatedAt || '')) await wallet.correct(imp.rootId, { ...imp.body, payload: doc, payloadHash: await C.hashJson(doc) });
-  const rs = reg.systems.find((s) => s.systemId === it.system);
-  let sys = systems().find((s) => s.body.registryUrl === reg.registryUrl);
-  const sysId = sys ? sys.rootId : await wallet.add('value-system', { title: rs?.title || it.system, W: 1, status: 'active', registryUrl: reg.registryUrl, note: t('reg.sysNote') });
+  const sysId = await wallet.registrySystem(reg, it.system);
   const ref = { registryUrl: reg.registryUrl, itemId: it.itemId, owner: reg.owner.card.address };
   const me = selfId();
   const preset = it.kind === 'object'
@@ -916,6 +989,12 @@ function assessDialog(evRootId, existing, preset = {}) {
     const phaseOpts = [['realized', t('phase.realized')]];
     if (canRetro || b.phase === 'retro') phaseOpts.push(['retro', t('phase.retro')]);
     const phaseSel = select(phaseOpts, b.phase);
+    let rx = reactionOf(b);
+    const rxBox = h('div', { class: 'vw-reacts' }, REACTIONS.map((v) => {
+      const btn = h('button', { type: 'button', class: 'vw-react' + (v === rx ? ' is-on' : '') + (v < 0 ? ' is-neg' : '') }, t('rx.' + v));
+      btn.addEventListener('click', () => { rx = rx === v ? null : v; rxBox.querySelectorAll('.vw-react').forEach((x, i) => x.classList.toggle('is-on', REACTIONS[i] === rx)); });
+      return btn;
+    }));
     const gained = h('textarea', { rows: 2, placeholder: t('as.linesPh') }, (b.gained || []).join('\n'));
     const lost = h('textarea', { rows: 2, placeholder: t('as.linesPh') }, (b.lost || []).join('\n'));
     const preview = h('p', { class: 'vw-preview', 'aria-live': 'polite' });
@@ -925,7 +1004,7 @@ function assessDialog(evRootId, existing, preset = {}) {
     };
     const contribs = contribRows(b.contributions || [], refresh, sysGoal);
     const spent = contribRows(b.spent || [], refresh, undefined);
-    if (!(b.contributions || []).length && goalOptions().length) contribs.add();
+    if (!(b.contributions || []).length && goalOptions().length) contribs.add(sysGoal ? { goalId: sysGoal } : undefined);
     const own = h('input', { type: 'number', step: 'any', value: b.ownScore?.value ?? '' });
     const ownU = h('input', { type: 'text', maxlength: 40, placeholder: t('as.unitPh'), value: b.ownScore?.unit || '' });
     const conf = select(['low', 'medium', 'high'].map((k) => [k, t('conf.' + k)]), b.confidence);
@@ -956,9 +1035,10 @@ function assessDialog(evRootId, existing, preset = {}) {
         const c = contribs.read(), sp = spent.read();
         const r = valueOf(c, sp);
         const body = { eventId: evRootId, phase: phaseSel.value, gained: lines(gained.value), lost: lines(lost.value), contributions: c, spent: sp, reference: isRef.checked, confidence: conf.value };
+        if (rx !== null) body.reaction = rx;
         if (c.length) body.v = r.v;
         if (sp.length) body.spentV = r.spentV;
-        if (own.value !== '') body.ownScore = { value: Number(own.value), ...(ownU.value.trim() ? { unit: ownU.value.trim() } : {}) };
+        if (own.value !== '' && !(rx !== null && b.ownScore && reactionOf({ ownScore: b.ownScore }) !== null && Number(own.value) === b.ownScore.value)) body.ownScore = { value: Number(own.value), ...(ownU.value.trim() ? { unit: ownU.value.trim() } : {}) };
         if (reasons.value.trim()) body.reasons = reasons.value.trim();
         if (check.value) body.checkAfter = check.value;
         if (hasPlan) body.planCount = Number(planCount.value);
@@ -967,19 +1047,21 @@ function assessDialog(evRootId, existing, preset = {}) {
         close(true); render();
         if (id && c.length) feelingCheck(evRootId, wallet.rootOf(id), body, r);
       } },
-      field(t('as.phase'), phaseSel, canRetro ? null : t('as.retroHint')),
+      h('p', { class: 'vw-label' }, t('rx.q')), rxBox,
       field(t('as.gained'), gained, t('as.linesHint')), field(t('as.lost'), lost),
-      h('fieldset', {}, h('legend', {}, t('as.goals')),
-        goalOptions().length ? [contribs.node, h('button', { type: 'button', class: 'vw-link', onclick: () => { contribs.add(); refresh(); } }, t('as.addGoal'))] : h('p', { class: 'vw-hint' }, t('as.noGoals'))),
-      h('fieldset', {}, h('legend', {}, t('as.spent')), h('p', { class: 'vw-hint' }, t('as.spentHint')),
-        spent.node, h('button', { type: 'button', class: 'vw-link', onclick: () => { spent.add(); refresh(); } }, t('as.addSpent'))),
-      preview,
-      h('fieldset', {}, h('legend', {}, t('vet.legend')), h('p', { class: 'vw-hint' }, t('vet.hint')), vetLine, h('div', { class: 'vw-actions' }, vetBtn, useVet)),
-      h('div', { class: 'vw-inline' }, field(t('as.own'), own, t('as.ownHint')), field(t('as.unit'), ownU)),
-      hasPlan ? field(t('as.planCount'), h('div', { class: 'vw-inline' }, planCount, planOut), t('as.planCountHint')) : null,
-      h('div', { class: 'vw-inline' }, field(t('as.conf'), conf), field(t('as.check'), check, t('as.checkHint'))),
+      // goals appear only when the holder has goals; reactions are calibrated by them later (owner, 2026-10-17)
+      goalOptions().length ? h('fieldset', {}, h('legend', {}, t('as.goals')), contribs.node, h('button', { type: 'button', class: 'vw-link', onclick: () => { contribs.add(); refresh(); } }, t('as.addGoal'))) : null,
+      goalOptions().length ? preview : null,
       field(t('as.reasons'), reasons),
-      h('label', { class: 'vw-check' }, isRef, h('span', {}, t('as.reference'))),
+      h('details', { class: 'vw-details' }, h('summary', {}, t('more')),
+        field(t('as.phase'), phaseSel, canRetro ? null : t('as.retroHint')),
+        h('fieldset', {}, h('legend', {}, t('as.spent')), h('p', { class: 'vw-hint' }, t('as.spentHint')),
+          spent.node, h('button', { type: 'button', class: 'vw-link', onclick: () => { spent.add(); refresh(); } }, t('as.addSpent'))),
+        h('fieldset', {}, h('legend', {}, t('vet.legend')), h('p', { class: 'vw-hint' }, t('vet.hint')), vetLine, h('div', { class: 'vw-actions' }, vetBtn, useVet)),
+        h('div', { class: 'vw-inline' }, field(t('as.own'), own, t('as.ownHint')), field(t('as.unit'), ownU)),
+        hasPlan ? field(t('as.planCount'), h('div', { class: 'vw-inline' }, planCount, planOut), t('as.planCountHint')) : null,
+        h('div', { class: 'vw-inline' }, field(t('as.conf'), conf), field(t('as.check'), check, t('as.checkHint'))),
+        h('label', { class: 'vw-check' }, isRef, h('span', {}, t('as.reference')))),
       submitRow()));
   });
 }
