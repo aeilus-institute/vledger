@@ -600,5 +600,19 @@
   "cal.go": "Calibrate",
   "cal.one": "Calibrate by my goals",
   "ev.openItem": "Open the material",
-  "more": "More"
+  "more": "More",
+  "an.rx": "Reactions",
+  "an.rxAssessed": "assessed ({p})",
+  "an.rxUseful": "useful (Interesting and above)",
+  "an.rxWasted": "wasted or harmful",
+  "an.rxNone": "No reactions yet in this period.",
+  "an.rxCol.assessed": "Assessed",
+  "an.rxCol.dist": "Reactions",
+  "an.rxByMonth": "By month",
+  "an.rxBest": "Gave the most",
+  "an.rxWasteList": "Lost time or harmed",
+  "an.rxQueue": "Assess the other {n} one by one",
+  "an.byGoals": "Value by your goals",
+  "an.rxCol.useful": "Useful",
+  "an.rxCol.wasted": "Wasted"
 }

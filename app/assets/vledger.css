@@ -183,3 +183,11 @@ details input[type="number"] { width: 96px; }
 .vw-more-menu .vw-menu { display: flex; flex-direction: column; }
 .vw-details > summary { cursor: pointer; color: var(--av-accent); margin: 8px 0; }
 .vw-queue h3 { margin: 4px 0 8px; }
+.vw-rxbar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: var(--av-soft); margin: 8px 0; min-width: 120px; }
+.vw-rxbar span { display: block; height: 100%; }
+.rxm100 { background: var(--av-danger); } .rxm20 { background: #D9897F; } .rx0 { background: var(--av-line); }
+.rx20 { background: #8CC4BC; } .rx100 { background: #3E9A90; } .rx500 { background: var(--av-accent); }
+.vw-rxlegend { display: flex; flex-wrap: wrap; gap: 6px 16px; list-style: none; padding: 0; margin: 0 0 12px; font-size: 0.9rem; }
+.vw-rxlegend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: 0; }
+.vw-rxlist { list-style: none; padding: 0; } .vw-rxlist li { margin: 6px 0; }
+.vw-table .vw-wide { width: 45%; }

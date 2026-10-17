@@ -161,3 +161,36 @@ export function analytics(events, assessments, selfId) {
   }
   return out;
 }
+
+// One-click reactions (SPEC 17) in aggregate: coverage, distribution, by system and by month, the best and the wasted.
+// events: [{id, occurredAt, systemId}], reactions: [{eventId, phase, reaction, createdAt}] (reaction already normalised).
+// The latest reaction per event counts, a retro one before a realized one.
+export const REACTION_SCALE = [-100, -20, 0, 20, 100, 500];
+export function reactionStats(events, reactions) {
+  const latest = {};
+  for (const r of [...reactions].sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))) {
+    if (!REACTION_SCALE.includes(r.reaction)) continue;
+    if (!latest[r.eventId] || r.phase === 'retro' || latest[r.eventId].phase !== 'retro') latest[r.eventId] = r;
+  }
+  const blank = () => ({ events: 0, assessed: 0, dist: Object.fromEntries(REACTION_SCALE.map((v) => [v, 0])), useful: 0, wasted: 0 });
+  const add = (g, rx) => {
+    g.events++;
+    if (rx === undefined) return;
+    g.assessed++; g.dist[rx]++;
+    if (rx >= 20) g.useful++;
+    if (rx < 0) g.wasted++;
+  };
+  const out = { total: blank(), bySystem: {}, byMonth: {}, best: [], wasted: [] };
+  for (const e of events) {
+    const rx = latest[e.id]?.reaction;
+    add(out.total, rx);
+    add(out.bySystem[e.systemId || 'none'] ||= blank(), rx);
+    if (rx !== undefined) add(out.byMonth[String(e.occurredAt).slice(0, 7)] ||= blank(), rx);
+    if (rx >= 100) out.best.push({ id: e.id, reaction: rx, occurredAt: e.occurredAt });
+    if (rx < 0) out.wasted.push({ id: e.id, reaction: rx, occurredAt: e.occurredAt });
+  }
+  const order = (a, b) => b.reaction - a.reaction || String(b.occurredAt).localeCompare(String(a.occurredAt));
+  out.best.sort(order);
+  out.wasted.sort((a, b) => a.reaction - b.reaction || String(b.occurredAt).localeCompare(String(a.occurredAt)));
+  return out;
+}

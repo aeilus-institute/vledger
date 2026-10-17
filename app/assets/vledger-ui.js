@@ -1439,6 +1439,8 @@ function tabAnalytics() {
   };
   return [
     h('div', { class: 'vw-toolbar' }, per),
+    reactionsSection(events().filter((e) => !since || String(e.body.occurredAt).slice(0, 10) >= since)),
+    h('h2', {}, t('an.byGoals')),
     h('p', { class: 'vw-hint' }, t('an.lead')),
     h('div', { class: 'vw-kpis' },
       h('div', { class: 'vw-kpi' }, h('div', { class: 'vw-kpi-n' }, String(an.total.all?.events || 0)), h('div', { class: 'vw-muted' }, t('an.events'))),
@@ -1449,6 +1451,44 @@ function tabAnalytics() {
     table(t('an.byAction'), an.byAction, (k) => k || '-'),
     table(t('an.byRole'), an.byRole, (k) => t('role.' + k)),
   ];
+}
+
+// Reactions in aggregate (owner, 2026-10-17): what is assessed, how, where, when; what gave most, what wasted time
+function reactionsSection(evs) {
+  const rxs = assessments().map((a) => ({ eventId: a.body.eventId, phase: a.body.phase, reaction: reactionOf(a.body), createdAt: a.createdAt })).filter((r) => r.reaction !== null);
+  const st = V.reactionStats(evs.map((e) => ({ id: e.rootId, occurredAt: e.body.occurredAt, systemId: e.body.systemId })), rxs);
+  const T = st.total;
+  const share = (n, d) => (d ? Math.round((n / d) * 100) + '%' : '-');
+  const bar = (g) => h('div', { class: 'vw-rxbar', role: 'img', 'aria-label': V.REACTION_SCALE.map((v) => `${t('rx.' + v)}: ${g.dist[v]}`).join(', ') },
+    V.REACTION_SCALE.filter((v) => g.dist[v]).map((v) => h('span', { class: 'rx' + String(v).replace('-', 'm'), style: `flex:${g.dist[v]}`, title: `${t('rx.' + v)}: ${g.dist[v]}` })));
+  const evLine = (x) => {
+    const ev = wallet.get(x.id);
+    if (!ev) return null;
+    const it = registryItem(ev);
+    return h('li', {}, h('span', { class: 'vw-chip' + (x.reaction < 0 ? ' vw-neg' : '') }, t('rx.' + x.reaction)), ' ', it?.url ? h('a', { href: it.url, target: '_blank', rel: 'noopener' }, phrase(ev)) : phrase(ev),
+      h('span', { class: 'vw-muted vw-small' }, ' · ' + String(ev.body.occurredAt).slice(0, 10)));
+  };
+  if (!T.events) return h('section', {}, h('h2', {}, t('an.rx')), h('p', { class: 'vw-muted' }, t('an.none')));
+  const months = Object.keys(st.byMonth).sort().reverse().slice(0, 12);
+  return h('section', {},
+    h('h2', {}, t('an.rx')),
+    h('div', { class: 'vw-kpis' },
+      h('div', { class: 'vw-kpi' }, h('div', { class: 'vw-kpi-n' }, `${T.assessed} / ${T.events}`), h('div', { class: 'vw-muted' }, t('an.rxAssessed', { p: share(T.assessed, T.events) }))),
+      h('div', { class: 'vw-kpi' }, h('div', { class: 'vw-kpi-n' }, String(T.dist[500])), h('div', { class: 'vw-muted' }, t('rx.500'))),
+      h('div', { class: 'vw-kpi' }, h('div', { class: 'vw-kpi-n' }, share(T.useful, T.assessed)), h('div', { class: 'vw-muted' }, t('an.rxUseful'))),
+      h('div', { class: 'vw-kpi' }, h('div', { class: 'vw-kpi-n' }, String(T.wasted)), h('div', { class: 'vw-muted' }, t('an.rxWasted')))),
+    T.assessed ? [bar(T), h('ul', { class: 'vw-rxlegend' }, V.REACTION_SCALE.map((v) => h('li', {}, h('i', { class: 'rx' + String(v).replace('-', 'm'), 'aria-hidden': 'true' }), `${t('rx.' + v)} ${T.dist[v]}`)))] : h('p', { class: 'vw-muted' }, t('an.rxNone')),
+    h('h3', {}, t('an.bySystem')),
+    h('div', { class: 'vw-table-wrap' }, h('table', { class: 'vw-table' },
+      h('thead', {}, h('tr', {}, h('th', {}, ''), h('th', {}, t('an.rxCol.assessed')), h('th', { class: 'vw-wide' }, t('an.rxCol.dist')), h('th', {}, t('an.rxCol.useful')), h('th', {}, t('an.rxCol.wasted')))),
+      h('tbody', {}, Object.entries(st.bySystem).sort((a, b) => b[1].events - a[1].events).map(([k, g]) => h('tr', {},
+        h('th', { scope: 'row' }, k === 'none' ? t('sys.none') : sysTitle(k)), h('td', {}, `${g.assessed} / ${g.events}`), h('td', {}, g.assessed ? bar(g) : '-'),
+        h('td', {}, share(g.useful, g.assessed)), h('td', {}, String(g.wasted))))))),
+    months.length ? [h('h3', {}, t('an.rxByMonth')), h('div', { class: 'vw-table-wrap' }, h('table', { class: 'vw-table' },
+      h('tbody', {}, months.map((m) => h('tr', {}, h('th', { scope: 'row' }, m), h('td', {}, String(st.byMonth[m].assessed)), h('td', { class: 'vw-wide' }, bar(st.byMonth[m])))))))] : null,
+    st.best.length ? [h('h3', {}, t('an.rxBest')), h('ul', { class: 'vw-rxlist' }, st.best.slice(0, 10).map(evLine))] : null,
+    st.wasted.length ? [h('h3', {}, t('an.rxWasteList')), h('ul', { class: 'vw-rxlist' }, st.wasted.slice(0, 10).map(evLine))] : null,
+    T.events > T.assessed ? h('p', {}, h('button', { class: 'vw-btn', onclick: () => { const done = new Set(rxs.map((r) => r.eventId)); queueDialog(evs.filter((e) => !done.has(e.rootId) && !assessments().some((a) => a.body.eventId === e.rootId)).map((e) => e.rootId)); } }, t('an.rxQueue', { n: T.events - T.assessed }))) : null);
 }
 
 // ---- inbox ----

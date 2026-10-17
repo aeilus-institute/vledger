@@ -146,6 +146,19 @@ async function run() {
   for (const [a, b] of pairs) identical &&= (await (await fetch('../assets/' + a)).text()) === (await (await fetch('../../spec/reference/' + b)).text());
   ok(identical, 'app uses the reference modules unchanged');
 
+  // Reactions in aggregate (SPEC 17)
+  const rsEv = [{ id: 'a', occurredAt: '2026-10-01', systemId: 'news' }, { id: 'b', occurredAt: '2026-10-05', systemId: 'news' },
+    { id: 'c', occurredAt: '2026-09-20', systemId: 'research' }, { id: 'd', occurredAt: '2026-10-07', systemId: 'research' }];
+  const rsRx = [{ eventId: 'a', phase: 'realized', reaction: 20, createdAt: '2026-10-02T00:00:00Z' }, { eventId: 'a', phase: 'retro', reaction: 500, createdAt: '2026-10-03T00:00:00Z' },
+    { eventId: 'b', phase: 'realized', reaction: -20, createdAt: '2026-10-06T00:00:00Z' }, { eventId: 'c', phase: 'realized', reaction: 100, createdAt: '2026-09-21T00:00:00Z' },
+    { eventId: 'd', phase: 'realized', reaction: 7, createdAt: '2026-10-08T00:00:00Z' }];
+  const rs = V.reactionStats(rsEv, rsRx);
+  ok(rs.total.events === 4 && rs.total.assessed === 3 && rs.total.dist[500] === 1 && rs.total.dist[20] === 0 && rs.total.useful === 2 && rs.total.wasted === 1,
+    'reaction stats: coverage, the latest (retro) reaction counts, unknown values are ignored');
+  ok(rs.bySystem.news.assessed === 2 && rs.bySystem.research.events === 2 && rs.bySystem.research.assessed === 1 && rs.byMonth['2026-10'].assessed === 2 && rs.byMonth['2026-09'].dist[100] === 1,
+    'reaction stats by system and by month');
+  ok(rs.best.map((x) => x.id).join() === 'a,c' && rs.wasted.map((x) => x.id).join() === 'b', 'the best and the wasted lists');
+
   const failed = results.filter((r) => !r.ok).length;
   document.getElementById('sum').textContent = failed ? `${failed} of ${results.length} failed` : `all ${results.length} passed`;
   window.__result = { passed: results.length - failed, failed, results };
