@@ -138,6 +138,22 @@ async function run() {
   try { await fetchRegistry(regUrl + '?copy=1'); moved = true; } catch { /* expected */ }
   ok(!moved, 'a registry served from an address it does not name is refused');
 
+  // Importing all registry items, with the holder's own reactions from the publisher's site
+  const W = await wallet('Importer');
+  const n1 = await W.importRegistryItems(rdoc, [], { today: '2026-10-17' });
+  const e1 = W.list('event').filter((e) => e.body.registryRef?.itemId === 'how-to-assess-value');
+  ok(n1.events === 1 && e1.length === 1 && e1[0].body.role === 'witness' && e1[0].body.action === 'published' && !W.list('assessment').length, 'every registry item becomes one event; without a reaction, "the publisher published it"');
+  const n2 = await W.importRegistryItems(rdoc, [{ itemId: 'how-to-assess-value', value: 500, label: 'Brilliant, I want to apply this', comment: 'Used it on Monday', at: '2026-10-10T09:00:00Z' }, { itemId: 'not-in-registry', value: 20 }]);
+  const ie2 = W.get(e1[0].rootId).body;
+  const a2 = W.list('assessment');
+  ok(n2.events === 0 && n2.updated === 1 && ie2.role === 'user' && ie2.occurredAt === '2026-10-10', 'a later reaction turns it into "I read it" on the date of the reaction');
+  ok(a2.length === 1 && a2[0].body.ownScore.value === 500 && a2[0].body.gained[0].startsWith('Brilliant') && a2[0].body.reasons === 'Used it on Monday' && a2[0].body.v === undefined, 'the reaction becomes an assessment with its own score, never a converted value');
+  const n3 = await W.importRegistryItems(rdoc, [{ itemId: 'how-to-assess-value', value: 500 }]);
+  ok(n3.events === 0 && n3.assessments === 0 && W.list('event').length === 1 && W.list('assessment').length === 1, 'running it again adds nothing twice');
+  const W2 = await wallet('Importer2');
+  await W2.importRegistryItems(rdoc, [{ itemId: 'how-to-assess-value', value: -20, label: 'Just lost my time', at: '2026-10-11T00:00:00Z' }]);
+  ok(W2.list('assessment')[0].body.lost[0] === 'Just lost my time' && W2.list('event')[0].body.role === 'user', 'a negative reaction is recorded as lost');
+
   // Withdraw the card
   await B.withdrawCard();
   ok((await A.lookupCard(B.address)) === null, 'a withdrawn card is no longer in the directory');

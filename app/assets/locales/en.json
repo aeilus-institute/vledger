@@ -562,5 +562,16 @@
   "br.share": "VSS may see",
   "br.share.fact": "That a transfer happened, its date and my role",
   "br.share.value": "Also the value and cost I assessed",
-  "br.transfer": "transfer"
+  "br.transfer": "transfer",
+  "ai.btn": "ÆVRI materials",
+  "ai.title": "Materials of the institute on your timeline",
+  "ai.lead": "Adds every research work, news item and learning material of the Aeilus Value Research Institute (ÆVRI) to your timeline, once. Running it again adds only what is new.",
+  "ai.mine": "Also bring my own reactions from my ÆVRI account as assessments",
+  "ai.privacy": "The site sends only your own reactions, and only to this page in your browser. They are kept in your encrypted wallet; nothing goes back.",
+  "ai.offSite": "Your reactions can be brought in only from the wallet at aeilus.institute.",
+  "ai.signIn": "Sign in to aeilus.institute first, then run it again.",
+  "ai.signInLink": "Sign in",
+  "ai.go": "Add to my timeline",
+  "ai.unit": "ÆVRI reaction",
+  "ai.done": "Added {events} events and {assessments} assessments"
 }

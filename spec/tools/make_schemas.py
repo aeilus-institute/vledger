@@ -177,7 +177,7 @@ message = {
 
 item = {'type': 'object', 'required': ['itemId', 'kind', 'title', 'system'], 'properties': {
     'itemId': {'type': 'string', 'pattern': '^[A-Za-z0-9._-]{1,100}$'}, 'kind': {'enum': ['object', 'event']},
-    'title': LINE, 'system': {'type': 'string', 'maxLength': 60}, 'category': {'enum': CATS},
+    'title': LINE, 'system': {'type': 'string', 'maxLength': 60}, 'category': {'enum': CATS}, 'url': {'type': 'string', 'pattern': '^https://'},
     'actions': {'type': 'array', 'items': LINE}, 'affects': TEXT, 'occurredAt': {'oneOf': [c('time'), c('date')]},
     'plan': {'type': 'object', 'required': ['promise'], 'properties': {'promise': TEXT, 'plannedV': {'type': 'number', 'minimum': -1, 'maximum': 1}}}}}
 ref = {'type': 'object', 'required': ['system', 'phrase', 'v'], 'properties': {

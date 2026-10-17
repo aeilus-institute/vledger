@@ -559,7 +559,8 @@ function tabTimeline() {
   const out = [
     h('div', { class: 'vw-toolbar' },
       h('button', { class: 'vw-btn vw-primary', onclick: () => eventDialog() }, t('ev.add')),
-      h('button', { class: 'vw-btn', onclick: registryDialog }, t('ev.fromRegistry'))),
+      h('button', { class: 'vw-btn', onclick: registryDialog }, t('ev.fromRegistry')),
+      h('button', { class: 'vw-btn', onclick: aevriImportDialog }, t('ai.btn'))),
     h('div', { class: 'vw-filters' },
       sel('system', systems().map((s) => [s.rootId, s.body.title])),
       sel('role', ['actor', 'affected', 'user', 'witness'].map((r) => [r, t('role.' + r)])),
@@ -801,6 +802,41 @@ async function addFromRegistry(doc, it, origin = 'file') {
     await wallet.add('plan', { eventId: evId, ...(it.kind === 'object' ? { objectIndex: 0 } : {}), author: owner, promise: it.plan.promise, ...(typeof it.plan.plannedV === 'number' ? { plannedV: it.plan.plannedV } : {}), registryRef: ref }, { source: 'registry' });
     render();
   }
+}
+
+// All materials of the institute registry on the timeline, with the holder's own reactions from the site (2026-10-17).
+function aevriImportDialog() {
+  const onSite = location.origin === 'https://aeilus.institute';
+  return modal(t('ai.title'), (close) => {
+    const mine = h('input', { type: 'checkbox', checked: onSite, disabled: !onSite });
+    const msg = h('p', { class: 'vw-error', role: 'alert' });
+    return h('form', { onsubmit: async (e) => {
+      e.preventDefault();
+      msg.textContent = t('create.wait');
+      try {
+        const doc = await fetchRegistry(AEVRI_REGISTRY);
+        const reg = doc.registry;
+        if (!(await C.verify(C.keyOfAddress(reg.owner.card.address), C.te.encode(C.canon(reg)), doc.sig)) || !(await C.verifyCard(reg.owner))) throw new Error(t('reg.badSig'));
+        let evals = [];
+        if (mine.checked) {
+          const r = await fetch('/api/v1/vledger/me/evaluations', { credentials: 'same-origin', cache: 'no-store' });
+          if (r.status === 401) {
+            msg.replaceChildren(t('ai.signIn') + ' ', h('a', { href: '/auth/?backurl=' + encodeURIComponent('/tools/vledger/') }, t('ai.signInLink')));
+            return;
+          }
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          const j = await r.json();
+          if (j.registryUrl !== reg.registryUrl) throw new Error('registry mismatch');
+          evals = j.items || [];
+        }
+        const n = await wallet.importRegistryItems(doc, evals, { unit: t('ai.unit') });
+        close(true); render();
+        toast(t('ai.done', { events: n.events, assessments: n.assessments }));
+      } catch (err) { msg.textContent = t('rl.failed', { msg: err.message }); }
+    } }, h('p', {}, t('ai.lead')),
+      h('label', { class: 'vw-check' }, mine, h('span', {}, t('ai.mine'))),
+      h('p', { class: 'vw-hint' }, onSite ? t('ai.privacy') : t('ai.offSite')), msg, submitRow(t('ai.go')));
+  });
 }
 
 // ---- plan ----

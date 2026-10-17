@@ -236,6 +236,52 @@ export class Wallet {
 
   contactByAddress(address) { return this.list('contact').find((c) => c.body.address === address); }
 
+  // Puts every item of a verified registry on the timeline once and, for items the holder evaluated on the
+  // publisher's site, adds a realized assessment with that reaction as own score (owner, 2026-10-17). Evaluated items
+  // become "I read it" events on the date of the reaction; the others "the publisher published it" on the publication
+  // date. Running it again adds only what is new. Returns {events, assessments, updated}.
+  async importRegistryItems(doc, evaluations = [], { unit = 'ÆVRI reaction', today } = {}) {
+    const reg = doc.registry;
+    const day = today || C.nowIso().slice(0, 10);
+    const ownerId = await this.addCard(reg.owner);
+    const imp = this.list('import').find((i) => i.body.originId === reg.registryUrl);
+    const payloadHash = await C.hashJson(doc);
+    if (!imp) await this.add('import', { origin: 'url', originId: reg.registryUrl, payload: doc, payloadHash }, { source: 'registry' });
+    else if (imp.body.payloadHash !== payloadHash) await this.correct(imp.rootId, { ...imp.body, payload: doc, payloadHash });
+    let sys = this.list('value-system').find((s) => s.body.registryUrl === reg.registryUrl);
+    const sysId = sys ? sys.rootId : await this.add('value-system', { title: reg.owner.card.name || 'Registry', W: 1, status: 'active', registryUrl: reg.registryUrl }, { source: 'registry' });
+    const me = this.selfContact().rootId;
+    const evals = new Map(evaluations.filter((e) => e && typeof e.itemId === 'string').map((e) => [e.itemId, e]));
+    const have = new Map(this.list('event').filter((e) => e.body.registryRef?.registryUrl === reg.registryUrl).map((e) => [e.body.registryRef.itemId, e]));
+    const assessed = new Set(this.list('assessment').filter((a) => this.head(a.rootId)?.payload.source === 'aevri.site').map((a) => a.body.eventId));
+    const out = { events: 0, assessments: 0, updated: 0 };
+    for (const it of reg.items) {
+      const ev = evals.get(it.itemId);
+      const rated = ev && typeof ev.value === 'number';
+      const ref = { registryUrl: reg.registryUrl, itemId: it.itemId, owner: reg.owner.card.address };
+      const read = { role: 'user', actor: me, action: (it.actions || [])[0] || 'read', occurredAt: (ev?.at || '').slice(0, 10) || day };
+      let cur = have.get(it.itemId);
+      if (!cur) {
+        const base = { objects: [{ label: it.title }], affected: [], systemId: sysId, registryRef: ref, status: 'confirmed', stamps: [], rulings: [] };
+        const body = rated ? { ...base, ...read } : { ...base, role: 'witness', actor: ownerId, action: 'published', occurredAt: String(it.occurredAt || day).slice(0, 10) };
+        const id = await this.add('event', body, { source: rated ? 'aevri.site' : 'registry' });
+        cur = this.get(this.rootOf(id));
+        out.events++;
+      } else if (rated && cur.body.role === 'witness' && cur.body.action === 'published') {
+        await this.correct(cur.rootId, { ...cur.body, ...read });
+        out.updated++;
+      }
+      if (rated && !assessed.has(cur.rootId)) {
+        const body = { eventId: cur.rootId, phase: 'realized', confidence: 'medium', reference: false, contributions: [], spent: [], ownScore: { value: ev.value, unit } };
+        if (ev.label) body[ev.value < 0 ? 'lost' : 'gained'] = [String(ev.label).slice(0, 300)];
+        if (ev.comment) body.reasons = String(ev.comment).slice(0, 2000);
+        await this.add('assessment', body, { source: 'aevri.site' });
+        out.assessments++;
+      }
+    }
+    return out;
+  }
+
   // Add or update a contact from a signed card. Returns the contact root id.
   async addCard(cardDoc) {
     if (!(await C.verifyCard(cardDoc))) throw new Error('card signature does not verify');

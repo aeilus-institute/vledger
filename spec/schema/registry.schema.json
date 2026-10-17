@@ -100,6 +100,10 @@
                   "other"
                 ]
               },
+              "url": {
+                "type": "string",
+                "pattern": "^https://"
+              },
               "actions": {
                 "type": "array",
                 "items": {
