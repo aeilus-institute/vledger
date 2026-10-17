@@ -591,6 +591,48 @@
           "items": {
             "$ref": "arbiter.schema.json#/$defs/ruling"
           }
+        },
+        "cases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "caseId",
+              "arbiterUrl",
+              "request",
+              "openedAt",
+              "status"
+            ],
+            "properties": {
+              "caseId": {
+                "$ref": "common.schema.json#/$defs/uuid"
+              },
+              "arbiterUrl": {
+                "type": "string",
+                "format": "uri"
+              },
+              "request": {
+                "enum": [
+                  "attest",
+                  "opinion",
+                  "decision"
+                ]
+              },
+              "openedAt": {
+                "$ref": "common.schema.json#/$defs/time"
+              },
+              "status": {
+                "enum": [
+                  "open",
+                  "decided",
+                  "declined"
+                ]
+              },
+              "problem": {
+                "type": "string"
+              }
+            }
+          }
         }
       },
       "if": {

@@ -416,6 +416,59 @@ export class Wallet {
     return stamp;
   }
 
+  // Ask the arbiter (SPEC 10). request: attest | opinion | decision; a decision needs a binding mandate naming it.
+  async openCase(eventRootId, { statement = '', request = 'attest', arbiterUrl } = {}) {
+    const ev = this.get(eventRootId);
+    const bundle = ev.body.receipt;
+    if (!bundle) throw new Error('the event has no receipt');
+    const claimant = bundle.receipt.parties.findIndex((p) => p.key.x === this.session.publicKey.x);
+    if (claimant < 0) throw new Error('this wallet is not a party to the receipt');
+    const url = (arbiterUrl || bundle.receipt.mandate?.arbiter?.url || '').replace(/\/$/, '');
+    if (!url) throw new Error('no arbiter');
+    const caseId = C.uuid7();
+    const res = await new ArbiterClient(url).openCase({ caseId, receipt: bundle.receipt, signatures: bundle.signatures, claimant, statement, request }, this.session);
+    const entry = { caseId, arbiterUrl: url, request, openedAt: C.nowIso(), status: res?.status || 'open' };
+    await this.correct(eventRootId, { ...ev.body, cases: [...(ev.body.cases || []), entry] });
+    return entry;
+  }
+
+  // Checks a ruling before it is kept: signed by the arbiter, about this receipt; binding only within the mandate.
+  async checkRuling(ruling, bundle, arbiterKey) {
+    if (!ruling || ruling.type !== 'aevri.vledger.ruling') return 'not a ruling';
+    if (arbiterKey && ruling.arbiter.key.x !== arbiterKey.x) return 'signed by another key';
+    if (!(await C.verifySigned(ruling, ruling.arbiter.key))) return 'signature';
+    if (ruling.receiptDigest !== (await C.receiptDigest(bundle.receipt))) return 'another receipt';
+    if (ruling.binding) {
+      const st = await C.receiptStatus(bundle);
+      const m = bundle.receipt.mandate || {};
+      if (!st.binding || m.arbiter?.key?.x !== ruling.arbiter.key.x) return 'no binding mandate for this arbiter';
+    }
+    return null;
+  }
+
+  // Fetches the rulings of open cases of an event and keeps those that check out.
+  async refreshCases(eventRootId) {
+    const ev = this.get(eventRootId);
+    const cases = ev.body.cases || [];
+    let rulings = ev.body.rulings || [];
+    let changed = false;
+    const out = [];
+    for (const c of cases) {
+      if (c.status !== 'open') { out.push(c); continue; }
+      const cli = new ArbiterClient(c.arbiterUrl);
+      const r = await cli.getCase(c.caseId, this.session);
+      if (!r || r.status === 'open') { out.push(c); continue; }
+      const key = (await cli.ref()).key;
+      const problem = r.ruling ? await this.checkRuling(r.ruling, ev.body.receipt, key) : null;
+      out.push({ ...c, status: r.status, ...(problem ? { problem } : {}) });
+      if (r.ruling && !problem && !rulings.some((x) => x.sig === r.ruling.sig)) rulings = [...rulings, r.ruling];
+      changed = true;
+    }
+    if (!changed) return [];
+    await this.correct(eventRootId, { ...ev.body, cases: out, rulings });
+    return out.filter((c) => c.status !== 'open');
+  }
+
   async setMessageState(rootId, state) {
     const m = this.get(rootId);
     return this.correct(rootId, { ...m.body, state });

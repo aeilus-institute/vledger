@@ -122,7 +122,7 @@ The chain is for the holder's own integrity, not a proof to others.
 | `contact` | `type` (`self`, `person`, `organization`, `state`, `group`, `device`, `unknown`), `name`, `address?`, `card?` (signed card as received), `note?`, `members?` |
 | `value-system` | `title`, `W` (weight on the holder's scale, > 0), `status` (`active`, `dropped`), `registryUrl?`, `note?` |
 | `goal` | `title`, `systemId?`, `S`, `N?`, `unit?`, `status`, `why?`, `signs?`, `horizon?`, `factIds[]` |
-| `event` | `actor` (contact id), `action` (words), `actionType?`, `objects[]` (`{label, typeId?, quantity?, unit?, note?}`), `affected[]` (contact ids), `role` (`actor`, `affected`, `user`, `witness`), `occurredAt`, `approx?`, `systemId?`, `registryRef?` (`{registryUrl, itemId, owner}`), `status` (`confirmed`, `suggested`, `rejected`), `suggestedBy?`, `receipt?`, `stamps[]`, `rulings[]` |
+| `event` | `actor` (contact id), `action` (words), `actionType?`, `objects[]` (`{label, typeId?, quantity?, unit?, note?}`), `affected[]` (contact ids), `role` (`actor`, `affected`, `user`, `witness`), `occurredAt`, `approx?`, `systemId?`, `registryRef?` (`{registryUrl, itemId, owner}`), `status` (`confirmed`, `suggested`, `rejected`), `suggestedBy?`, `receipt?`, `stamps[]`, `rulings[]`, `cases[]` (`{caseId, arbiterUrl, request, openedAt, status}`) |
 | `element-type` | `name`, `category` (`thing`, `service`, `information`, `time`, `money`, `right`, `decision`, `relation`, `action`, `other`) |
 | `plan` | `eventId`, `objectIndex?`, `author` (contact id; self for one's own expectation), `promise`, `plannedV?`, `plannedSpentV?`, `registryRef?` |
 | `assessment` | `eventId`, `objectIndex?`, `phase` (`realized`, `retro`), `gained[]`, `lost[]`, `ownScore?`, `contributions[]` (`{goalId, c?, k?}`), `spent[]` (same shape: what it cost in terms of goals), `v?`, `spentV?`, `planCount?`, `reference` (bool), `confidence`, `reasons?`, `checkAfter?`, `vet?` |
@@ -210,6 +210,12 @@ shared by the parties. Each party signs the 32 digest bytes; **matched** when al
 parties; cases with disclosed receipts; rulings `attest`, `opinion`, `binding`; a binding ruling is accepted only
 from the arbiter named in the binding mandate of a matched receipt. Stamps and rulings are signed over the JCS form
 without `sig`.
+
+A case is opened by a party that proves its key (the same proof headers as for lookups) and discloses the receipt
+with the signatures. The arbiter answers `409` to a request for a decision when the receipt has no binding mandate
+naming it, signed by every party. The wallet keeps a ruling only after checking: the arbiter signature, the receipt
+digest, and for a binding ruling the mandate. A ruling from the ÆVRI arbiter follows the published rules
+(`/tools/vledger/arbiter-rules/`).
 
 ## 11. Messages and relays
 

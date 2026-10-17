@@ -549,6 +549,8 @@ function eventCard(ev, as) {
           h('div', { class: 'vw-muted vw-small' }, t('plan.counted', { f: pct(V.planFactor(s, { contactId: p.body.author, systemId: b.systemId })) })))) : h('span', { class: 'vw-muted' }, '-')),
       h('div', { class: 'vw-phase' }, h('div', { class: 'vw-muted' }, t('phase.realized')), realized ? assessmentView(realized) : h('span', { class: 'vw-muted' }, '-')),
       h('div', { class: 'vw-phase' }, h('div', { class: 'vw-muted' }, t('phase.retro')), retro ? assessmentView(retro) : h('span', { class: 'vw-muted' }, realized ? '-' : t('phase.retroAfter')))),
+    (b.rulings || []).map((r) => h('p', { class: 'vw-ruling' }, h('span', { class: 'vw-chip' + (r.binding ? ' vw-chip-sys' : '') }, t(r.binding ? 'cs.binding' : 'cs.opinion')), ' ', t('cs.ruling', { decision: r.decision }))),
+    (b.cases || []).some((c) => c.status === 'open') ? h('p', { class: 'vw-muted vw-small' }, t('cs.open')) : null,
     eff !== null ? h('p', { class: 'vw-muted vw-small' }, t('ev.efficiency', { e: num(eff), net: pct(latest.body.v - latest.body.spentV) })) : null,
     h('div', { class: 'vw-actions' },
       h('button', { class: 'vw-btn', onclick: () => assessDialog(ev.rootId, null, { phase: realized ? 'retro' : 'realized' }) }, t(realized ? 'ev.assessLater' : 'ev.assess')),
@@ -559,6 +561,11 @@ function eventCard(ev, as) {
         const st = await guard(() => wallet.stampAt(ev.rootId, (wallet.settings().arbiters || [])[0]?.url || AEVRI_ARBITER));
         if (st) { toast(t('rc.stampDone', { at: st.receivedAt.replace('T', ' ').slice(0, 16) })); render(); }
       } }, t('rc.stamp')) : null,
+      b.receipt && b.receiptState === 'matched' ? h('button', { class: 'vw-btn vw-ghost', onclick: () => caseDialog(ev) }, t('cs.ask')) : null,
+      (b.cases || []).some((c) => c.status === 'open') ? h('button', { class: 'vw-btn vw-ghost', onclick: async () => {
+        const done = await guard(() => wallet.refreshCases(ev.rootId));
+        if (done) { toast(done.length ? t('cs.got') : t('cs.none')); render(); }
+      } }, t('cs.check')) : null,
       h('button', { class: 'vw-btn vw-ghost', onclick: () => eventDialog(ev) }, t('edit')),
       itemMenu(ev)));
 }
@@ -960,6 +967,27 @@ function confirmDialog(ev, otherId) {
         await handOver(offer, other.body.name);
       } catch (err) { msg.textContent = t('rl.failed', { msg: err.message }); }
     } }, h('p', {}, t('rc.lead')), field(t('rc.mode'), mode, t('rc.modeHint')), msg, submitRow(t('rc.go')));
+  });
+}
+
+function caseDialog(ev) {
+  const bundle = ev.body.receipt;
+  const m = bundle.receipt.mandate || {};
+  const url = m.arbiter?.url || (wallet.settings().arbiters || [])[0]?.url || AEVRI_ARBITER;
+  return modal(t('cs.title'), (close) => {
+    const req = select([['attest', t('cs.request.attest')], ['opinion', t('cs.request.opinion')], ['decision', t('cs.request.decision')]], m.mode === 'binding' ? 'decision' : 'opinion');
+    const st = h('textarea', { rows: 4, maxlength: 2000 });
+    const msg = h('p', { class: 'vw-error', role: 'alert' });
+    return h('form', { onsubmit: async (e) => {
+      e.preventDefault();
+      msg.textContent = t('create.wait');
+      try {
+        await wallet.openCase(ev.rootId, { statement: st.value.trim(), request: req.value, arbiterUrl: url });
+        close(true); toast(t('cs.sent')); render();
+      } catch (err) { msg.textContent = String(err.code).endsWith('no-binding-mandate') || err.code === 409 ? t('cs.noBinding') : t('rl.failed', { msg: err.message }); }
+    } }, h('p', {}, t('cs.lead')), field(t('cs.request'), req), field(t('cs.statement'), st), msg,
+      h('p', { class: 'vw-small' }, h('a', { href: 'https://aeilus.institute/tools/vledger/arbiter-rules/', target: '_blank', rel: 'noopener' }, t('cs.rules'))),
+      submitRow(t('cs.go')));
   });
 }
 

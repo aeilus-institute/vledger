@@ -1,4 +1,5 @@
-// Value Wallet L3 tests: relay, card directory, sharing through the relay, joint confirmation of events, arbiter stamps.
+// Value Wallet L3 tests: relay, card directory, sharing through the relay, joint confirmation of events, arbiter stamps,
+// cases and rulings.
 // Needs the reference server: python spec/tools/provider_server.py 8793 --delay 1 --test
 import { Wallet } from '../assets/vledger-store.js';
 import { RelayClient, ArbiterClient } from '../assets/vledger-providers.js';
@@ -96,6 +97,29 @@ async function run() {
   await B.deliver(await C.sealMessage(B.contactByAddress(A.address).body.card, { kind: 'event-offer', receipt: bundle }, B.session));
   await A.checkInbox();
   ok(A.get(ev2).body.receiptState === 'disputed', 'a reply that changes the receipt marks the event as disputed, not matched');
+
+  // Cases and rulings (SPEC 10)
+  const rule = (id, body) => fetch(`${BASE}/debug/rule/${id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json());
+  const cs = await A.openCase(ev, { statement: 'We agree it happened; please record a decision.', request: 'decision' });
+  ok(cs.status === 'open' && A.get(ev).body.cases.length === 1, 'a party opens a case asking for a decision under the binding mandate');
+  let peek = false;
+  try { const O = await wallet('Outsider2'); await new ArbiterClient(ARB).getCase(cs.caseId, O.session); peek = true; } catch { /* expected */ }
+  ok(!peek, 'a non-party cannot read the case');
+  ok((await A.refreshCases(ev)).length === 0, 'no answer yet: nothing changes');
+  await rule(cs.caseId, { mode: 'binding', decision: 'The help was given as recorded.', status: 'matched' });
+  const done = await A.refreshCases(ev);
+  const rs = A.get(ev).body.rulings;
+  ok(done.length === 1 && rs.length === 1 && rs[0].binding && rs[0].decision.startsWith('The help'), 'the wallet fetches the binding ruling, checks it and keeps it with the event');
+  const otherSide = await new ArbiterClient(ARB).getCase(cs.caseId, B.session);
+  ok(otherSide.status === 'decided' && !(await B.checkRuling(otherSide.ruling, evB.body.receipt)), 'the other party gets the same ruling and it checks out on its side');
+  let refused409 = null;
+  try { await A.openCase(ev2, { request: 'decision', arbiterUrl: ARB }); } catch (e) { refused409 = e.code; }
+  ok(String(refused409).endsWith('no-binding-mandate'), 'a decision without a binding mandate is refused by the arbiter (409)');
+  const cs2 = await A.openCase(ev2, { request: 'opinion', arbiterUrl: ARB, statement: 'Our versions differ.' });
+  await rule(cs2.caseId, { mode: 'binding', decision: 'Overreach', status: 'matched', forceBinding: true });
+  await A.refreshCases(ev2);
+  const e2 = A.get(ev2).body;
+  ok(!(e2.rulings || []).length && e2.cases[0].problem, 'a binding ruling beyond the mandate is not kept, even when signed by the arbiter');
 
   // Request blocking over the relay
   const fam = await A.add('value-system', { title: 'City', W: 1, status: 'active' });

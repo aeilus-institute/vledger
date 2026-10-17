@@ -206,7 +206,9 @@ class Handler(BaseHTTPRequestHandler):
         if TEST and parts[0] == 'debug':
             if parts[1:2] == ['dump'] and method == 'GET':
                 with LOCK:
-                    return self.send(200, {'wallets': wallets, 'recoveries': {k: {kk: vv for kk, vv in v.items()} for k, v in recoveries.items()}, 'inboxes': inboxes, 'cards': cards, 'stamps': stamps})
+                    return self.send(200, {'wallets': wallets, 'recoveries': {k: {kk: vv for kk, vv in v.items()} for k, v in recoveries.items()}, 'inboxes': inboxes, 'cards': cards, 'stamps': stamps, 'cases': cases})
+            if parts[1:2] == ['rule'] and method == 'POST':
+                return self.rule(parts[2])
             if parts[1:2] == ['approve'] and method == 'POST':
                 with LOCK:
                     recoveries[parts[2]]['approved'] = True
@@ -396,10 +398,47 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, st)
         if parts == ['cases'] and method == 'POST':
             b = self.body()
+            receipt, sigs, claimant = b.get('receipt') or {}, b.get('signatures') or [], b.get('claimant', -1)
+            parties = receipt.get('parties') or []
+            digest = 'sha256:' + hashlib.sha256(canon(receipt).encode()).hexdigest()
+            d = bytes.fromhex(digest[7:])
+            valid = {s_['party'] for s_ in sigs if 0 <= s_.get('party', -1) < len(parties) and ed_ok(parties[s_['party']]['key']['x'], d, s_['sig'])}
+            addr = self.headers.get('X-Vledger-Address', '')
+            if not (0 <= claimant < len(parties)) or claimant not in valid or addr != 'vw1:' + parties[claimant]['key']['x'] or not self.proven(addr):
+                return self.problem(403, 'not-a-party')
+            if b['caseId'] in cases:
+                return self.problem(409, 'case-exists')
+            mandate = receipt.get('mandate') or {}
+            binding_ok = len(valid) == len(parties) and mandate.get('mode') == 'binding' and (mandate.get('arbiter') or {}).get('key', {}).get('x') == arb_pub()['x']
+            if b.get('request') == 'decision' and not binding_ok:
+                return self.problem(409, 'no-binding-mandate')
             with LOCK:
-                cases[b['caseId']] = {**b, 'status': 'open'}
-            return self.send(202, {'caseId': b['caseId'], 'status': 'open'})
+                cases[b['caseId']] = {**b, 'receiptDigest': digest, 'bindingAllowed': binding_ok, 'status': 'open'}
+            return self.send(202, {'caseId': b['caseId'], 'status': 'open', 'bindingAllowed': binding_ok})
+        if len(parts) == 2 and parts[0] == 'cases' and method == 'GET':
+            c = cases.get(parts[1])
+            addr = self.headers.get('X-Vledger-Address', '')
+            if not c or addr not in ['vw1:' + p_['key']['x'] for p_ in c['receipt']['parties']] or not self.proven(addr):
+                return self.problem(403, 'not-a-party')
+            return self.send(200, {'caseId': c['caseId'], 'status': c['status'], **({'ruling': c['ruling']} if 'ruling' in c else {})})
         return self.problem(404, 'not-found')
+
+    def rule(self, case_id):
+        # Test mode only: stands for the arbiter's desk. Body {mode, decision, status?, forceBinding?}.
+        b = self.body()
+        c = cases.get(case_id)
+        if not c or c['status'] != 'open':
+            return self.problem(409, 'not-open')
+        if b['mode'] == 'binding' and not c['bindingAllowed'] and not b.get('forceBinding'):
+            return self.problem(409, 'no-binding-mandate')
+        r = {'type': 'aevri.vledger.ruling', 'caseId': case_id, 'receiptDigest': c['receiptDigest'], 'mode': b['mode'], 'binding': b['mode'] == 'binding',
+             'decision': b['decision'], 'issuedAt': iso(now()), 'arbiter': {'url': f'http://127.0.0.1:{PORT}/v1/arbiter', 'key': arb_pub()}}
+        if b['mode'] == 'binding':
+            r['status'] = b.get('status', 'matched')
+        r['sig'] = b64u(ARB_KEY.sign(canon(r).encode()))
+        with LOCK:
+            c['ruling'], c['status'] = r, 'decided'
+        return self.send(200, r)
 
     # ---- GitHub contents API mock (subset), test mode only ----
     def github(self, method, path, q):

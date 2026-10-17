@@ -242,4 +242,9 @@ export class ArbiterClient {
       body: JSON.stringify({ receiptDigest: digest, keys: bundle.receipt.parties.map((p) => p.key), signatures: bundle.signatures }) });
   }
   async lookup(digest, session) { return call(`${this.url}/stamps/${encodeURIComponent(digest)}`, { headers: await proofHeaders(this.url, session) }); }
+  // A party opens a case and discloses the receipt (SPEC 10); the ruling arrives later at /cases/{caseId}.
+  async openCase(c, session) {
+    return call(this.url + '/cases', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(await proofHeaders(this.url, session)) }, body: JSON.stringify(c) });
+  }
+  async getCase(caseId, session) { return call(`${this.url}/cases/${encodeURIComponent(caseId)}`, { headers: await proofHeaders(this.url, session) }); }
 }
