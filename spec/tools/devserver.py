@@ -1,7 +1,10 @@
 """Local dev server for the L0 package: serves the package folder on 127.0.0.1 and accepts
 PUT /fixtures/<name>.json from reference/make-fixtures.html. Nothing else is writable.
 
-    python tools/devserver.py [port]
+    python tools/devserver.py [port] [root]
+
+With a root other than the package (for example the repository, to run app/tests/selftest.html)
+the server is read-only.
 """
 import http.server
 import json
@@ -9,7 +12,8 @@ import pathlib
 import re
 import sys
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+ROOT = pathlib.Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else pathlib.Path(__file__).resolve().parent.parent
+WRITABLE = len(sys.argv) <= 2
 FIXTURES = ROOT / 'fixtures'
 NAME = re.compile(r'^/fixtures/([a-z0-9][a-z0-9._-]{0,80}\.json)$')
 
@@ -26,7 +30,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_PUT(self):
         m = NAME.match(self.path)
-        if not m or self.client_address[0] != '127.0.0.1':
+        if not WRITABLE or not m or self.client_address[0] != '127.0.0.1':
             self.send_error(403)
             return
         body = self.rfile.read(int(self.headers.get('Content-Length', '0')))
