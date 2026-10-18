@@ -213,5 +213,9 @@ details input[type="number"] { width: 96px; }
 .vw-node-me { fill: var(--av-soft); stroke: var(--av-line); }
 .vw-node rect { fill: var(--av-surface); stroke: var(--av-accent); cursor: pointer; }
 .vw-node-t { fill: var(--av-ink); font-size: 12px; }
-.vw-node-n { fill: var(--av-muted); font-size: 11px; }
+.vw-node-n { fill: var(--av-muted); font-size: 11px; paint-order: stroke; stroke: var(--av-paper); stroke-width: 4px; stroke-linejoin: round; }
 .vw-list { display: flex; flex-direction: column; }
+.vw-chiprow { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+.vw-fchip { font: inherit; font-size: 0.85rem; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--av-line); background: var(--av-surface); color: inherit; cursor: pointer; }
+.vw-fchip.is-on { border-color: var(--av-accent); color: var(--av-accent); background: var(--av-soft); }
+.vw-fchip.vw-ghost { border-style: dashed; color: var(--av-muted); }

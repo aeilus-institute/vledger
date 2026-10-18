@@ -1,8 +1,9 @@
 # Value Wallet format and protocols - `aevri.vledger` 1.0
 
-Status: **draft 1.0-d7** (2026-10-18). Editor: Aeilus Value Research Institute (ÆVRI).
+Status: **draft 1.0-d8** (2026-10-18). Editor: Aeilus Value Research Institute (ÆVRI).
 Licence: CC BY 4.0 (this text), MIT (reference code and schemas). Requirements (Russian): TZ v0.2 and v0.3.
 Fixtures in `fixtures/` are produced by `reference/` (Web Crypto) and pass the independent `tools/verify_fixtures.py`.
+Changes from d7: spheres link VSS schemas and show them as a map (section 19).
 Changes from d6: unlock with device biometrics (section 18), kept on the device, outside the wallet document.
 Changes from d5: one-click `reaction` in assessments (section 17); `registrySystemId` in value systems.
 Changes from d5: one-click `reaction` in assessments (section 17); `registrySystemId` in value systems.
@@ -372,3 +373,11 @@ and the data key is kept as `seal(kek, dek, "device-unlock", walletId, credentia
 `{walletId, credentialId, salt, rpId, wrap, createdAt}` stays on that device, outside the wallet document: it is never
 synced or sent to a provider, so only that device can use it. The passphrase slot stays the master key. Where the
 browser gives no PRF result, a wallet MUST NOT offer a biometric gate without a key and keeps the passphrase.
+
+## 19. A sphere and its VSS schemas (d8)
+
+A value system (sphere) MAY link VSS schemas: `vss: [{schemaId, title, holderNodeId, nodeContacts, source}]`.
+`holderNodeId` is the node that stands for the holder; `nodeContacts` maps other nodes to contacts. A copy of the
+schema document (`aevri.vss`) is kept as an `import` record with `originId` `vss:<schemaId>`, so the map works
+offline and from a file. The map of a sphere shows the holder node and its neighbours; a flow counts the events of
+the sphere whose `vssRef.flowId` is that flow; flows without events are shown as expected, not as zero value.

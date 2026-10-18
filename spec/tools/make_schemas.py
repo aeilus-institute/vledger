@@ -22,7 +22,10 @@ defs = {
         'members': {'type': 'array', 'items': ID}}},
     'valueSystem': {'type': 'object', 'required': ['title', 'W', 'status'], 'properties': {
         'title': LINE, 'W': {'type': 'number', 'exclusiveMinimum': 0}, 'status': {'enum': ['active', 'dropped']},
-        'registryUrl': {'type': 'string', 'pattern': '^https://'}, 'registrySystemId': {'type': 'string', 'maxLength': 60}, 'group': {'type': 'string', 'maxLength': 100}, 'note': TEXT}},
+        'registryUrl': {'type': 'string', 'pattern': '^https://'}, 'registrySystemId': {'type': 'string', 'maxLength': 60}, 'group': {'type': 'string', 'maxLength': 100}, 'note': TEXT,
+        'vss': {'type': 'array', 'items': {'type': 'object', 'required': ['schemaId', 'holderNodeId'], 'properties': {
+            'schemaId': {'type': 'string', 'maxLength': 100}, 'title': LINE, 'holderNodeId': {'type': 'string', 'maxLength': 100},
+            'nodeContacts': {'type': 'object', 'additionalProperties': ID}, 'source': {'enum': ['account', 'link', 'file']}}}}}},
     'goal': {'type': 'object', 'required': ['title', 'S', 'status'], 'properties': {
         'title': LINE, 'systemId': ID, 'S': {'type': 'number', 'exclusiveMinimum': 0}, 'N': {'type': 'number', 'exclusiveMinimum': 0},
         'unit': {'type': 'string', 'maxLength': 40}, 'status': {'enum': ['active', 'reached', 'dropped']},

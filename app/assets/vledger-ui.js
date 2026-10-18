@@ -64,7 +64,7 @@ async function runPending() {
 }
 let tab = 'timeline';
 let lifePath = []; // Life tab: [{t:'g', id}, {t:'s', id}, {t:'x', s, cp, dir}, {t:'p', cp}]
-let lifeMode = 'ex', lifeMap = false, lifeSheet = null;
+let lifeMode = 'ex', lifeMap = false, lifeSheet = null; // lifeMap: false (list) | 'events' | 'vss:<schemaId>'
 let filters = { system: '', role: '', contact: '', assessed: '' };
 let period = '90';
 let idleTimer = null;
@@ -758,8 +758,13 @@ function lifeSphere(sid, all) {
       : h('p', { class: 'vw-hint' }, t('life.noGoals')));
     if (sid) out.push(h('button', { class: 'vw-btn', onclick: () => goalDialog() }, t('life.addGoal')));
   } else {
-    out.push(h('div', { class: 'vw-right' }, h('button', { class: 'vw-link', onclick: () => { lifeMap = !lifeMap; render(); } }, lifeMap ? t('life.asList') : t('life.asMap'))));
-    if (lifeMap) out.push(sphereMap(list.slice(0, 10)));
+    const sys = sid ? wallet.get(sid) : null;
+    const linked = sys?.body.vss || [];
+    const views = [[false, t('life.asList')], ['events', t('life.asMap')], ...linked.map((x) => ['vss:' + x.schemaId, t('vss.view', { title: x.title })])];
+    out.push(h('div', { class: 'vw-chiprow' }, views.map(([k, label]) => h('button', { class: 'vw-fchip' + (lifeMap === k ? ' is-on' : ''), onclick: () => { lifeMap = k; render(); } }, label)),
+      sid ? h('button', { class: 'vw-fchip vw-ghost', onclick: () => linkSchemaDialog(sid) }, t('vss.link')) : null));
+    if (typeof lifeMap === 'string' && lifeMap.startsWith('vss:')) out.push(schemaMap(sys, lifeMap.slice(4), evs));
+    else if (lifeMap) out.push(sphereMap(list.slice(0, 10)));
     else {
       const shown = list.slice(0, 7);
       out.push(shown.map((x) => lrow(x.dir === 'in' ? t('life.x.in', { name: x.cp ? nameOf(x.cp) : t('cp.unknown') }) : t('life.x.out', { name: x.cp ? nameOf(x.cp) : t('cp.unknown') }),
@@ -808,6 +813,128 @@ function sphereMap(list) {
     svg.append(g);
   });
   return h('div', { class: 'vw-map' }, svg, h('p', { class: 'vw-muted vw-small' }, t('life.mapHint')));
+}
+
+// ---- a sphere's VSS schema seen from the holder (SPEC 19, D-37) ----
+
+function schemaMap(sys, schemaId, evs) {
+  const link = (sys?.body.vss || []).find((x) => x.schemaId === schemaId);
+  const doc = wallet.schemaDoc(schemaId);
+  if (!link || !doc) return h('p', { class: 'vw-hint' }, t('vss.missing'));
+  const me = link.holderNodeId;
+  const node = (id) => doc.nodes.find((n) => n.id === id);
+  const flows = doc.flows.filter((f) => f.source_node_id === me || f.target_node_id === me);
+  const count = new Map();
+  for (const e of evs) { const fid = e.body.vssRef?.vssSchemaId === schemaId ? e.body.vssRef.flowId : null; if (fid) count.set(fid, (count.get(fid) || 0) + 1); }
+  // neighbours: nodes on the other end of my flows; external flows (no node) are grouped as "outside"
+  const sides = [];
+  for (const f of flows) {
+    const other = f.source_node_id === me ? f.target_node_id : f.source_node_id;
+    const key = other || '__ext';
+    if (!sides.includes(key)) sides.push(key);
+  }
+  const shown = sides.slice(0, 5);
+  const H = Math.max(130, shown.length * 58 + 20), mid = H / 2;
+  const ns = 'http://www.w3.org/2000/svg';
+  const el = (tag, attrs, text) => { const n = document.createElementNS(ns, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); if (text != null) n.textContent = text; return n; };
+  const svg = el('svg', { viewBox: `0 0 380 ${H}`, width: '100%', role: 'img', 'aria-label': t('vss.mapLabel', { title: link.title }) });
+  const defs = el('defs', {});
+  for (const [id, col] of [['vsa-in', 'var(--av-success)'], ['vsa-out', 'var(--av-accent)']]) {
+    const m = el('marker', { id, viewBox: '0 0 10 10', refX: '8', refY: '5', markerWidth: '6', markerHeight: '6', orient: 'auto-start-reverse' });
+    m.append(el('path', { d: 'M2 1L8 5L2 9', fill: 'none', stroke: col, 'stroke-width': '1.6' }));
+    defs.append(m);
+  }
+  svg.append(defs);
+  svg.append(el('rect', { x: '4', y: String(mid - 24), width: '84', height: '48', rx: '8', class: 'vw-node-me' }));
+  svg.append(el('text', { x: '46', y: String(mid - 6), 'text-anchor': 'middle', 'dominant-baseline': 'central', class: 'vw-node-t' }, t('me.subj')));
+  svg.append(el('text', { x: '46', y: String(mid + 11), 'text-anchor': 'middle', 'dominant-baseline': 'central', class: 'vw-node-n' }, (node(me)?.name || '').slice(0, 14)));
+  shown.forEach((key, i) => {
+    const y = 10 + i * 58 + 24;
+    const mine = flows.filter((f) => (f.source_node_id === me ? f.target_node_id : f.source_node_id) === (key === '__ext' ? null : key));
+    const inF = mine.filter((f) => f.target_node_id === me), outF = mine.filter((f) => f.source_node_id === me);
+    const draw = (fl, dir) => {
+      if (!fl.length) return;
+      const n = fl.reduce((s, f) => s + (count.get(f.id) || 0), 0);
+      const [x1, y1, x2, y2] = dir === 'in' ? [246, y - 7, 92, mid - 7] : [92, mid + 7, 246, y + 7];
+      svg.append(el('line', { x1: String(x1), y1: String(y1), x2: String(x2), y2: String(y2), stroke: dir === 'in' ? 'var(--av-success)' : 'var(--av-accent)', 'stroke-width': '1.6', 'marker-end': `url(#${dir === 'in' ? 'vsa-in' : 'vsa-out'})`, ...(n ? {} : { 'stroke-dasharray': '4 4' }) }));
+      const label = (fl.length === 1 ? (fl[0].name || '') : t('vss.nFlows', { n: fl.length })).slice(0, 16) + ' · ' + (n ? String(n) : t('vss.noEv'));
+      svg.append(el('text', { x: '244', y: String(dir === 'in' ? y - 14 : y + 22), 'text-anchor': 'end', class: 'vw-node-n' }, label));
+    };
+    draw(inF, 'in'); draw(outF, 'out');
+    const name = key === '__ext' ? t('vss.outside') : (node(key)?.name || key);
+    const cid = key !== '__ext' ? link.nodeContacts?.[key] : null;
+    const g = el('g', { class: 'vw-node', tabindex: '0', role: 'button' });
+    g.append(el('rect', { x: '250', y: String(y - 18), width: '126', height: '36', rx: '7' }), el('text', { x: '313', y: String(y), 'text-anchor': 'middle', 'dominant-baseline': 'central', class: 'vw-node-t' }, name.slice(0, 18)));
+    g.addEventListener('click', () => { if (cid && wallet.get(cid)) goLife({ t: 'p', cp: cid }); else toast(t('vss.noContact', { name })); });
+    svg.append(g);
+  });
+  const rest = doc.flows.length - flows.length;
+  return h('div', { class: 'vw-map' }, svg,
+    h('p', { class: 'vw-muted vw-small' }, t('vss.mapHint')),
+    sides.length > shown.length ? h('p', { class: 'vw-muted vw-small' }, t('vss.moreSides', { n: sides.length - shown.length })) : null,
+    rest > 0 ? h('p', { class: 'vw-muted vw-small' }, t('vss.rest', { n: rest }), ' ', link.source !== 'file' ? h('a', { href: '/tools/vss/s/' + encodeURIComponent(schemaId) + '/', target: '_blank', rel: 'noopener' }, t('vss.openVss')) : null) : null,
+    h('div', { class: 'vw-actions' },
+      link.source !== 'file' ? h('button', { class: 'vw-btn vw-ghost', onclick: async () => { const d = await guard(() => fetchSchema(schemaId)); if (d) { await guard(() => wallet.linkSchema(sys.rootId, { ...link, doc: d.doc })); toast(t('vss.updated')); render(); } } }, t('vss.refresh')) : null,
+      h('button', { class: 'vw-btn vw-ghost', onclick: async () => { if (confirm(t('vss.unlinkQ'))) { await guard(() => wallet.unlinkSchema(sys.rootId, schemaId)); lifeMap = false; render(); } } }, t('vss.unlink'))));
+}
+
+// A schema from the holder's ÆVRI account (same site, signed in) or from a share link of it
+async function fetchSchema(id) {
+  const r = await fetch('/api/v1/vss/schemas/' + encodeURIComponent(id), { credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' } });
+  if (r.status === 401 || r.status === 403) throw Object.assign(new Error(t('vss.signIn')), { code: r.status });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const v = await r.json();
+  return { doc: v.doc, title: v.title || v.doc?.schema?.name || id };
+}
+
+function linkSchemaDialog(sphereId) {
+  return modal(t('vss.linkTitle', { sphere: sysTitle(sphereId) }), (close) => {
+    const box = h('div', {});
+    const msg = h('p', { class: 'vw-error', role: 'alert' });
+    const chooseNode = (schemaId, title, doc, source) => {
+      const nodes = doc.nodes || [];
+      const meSel = select(nodes.map((n) => [n.id, n.name || n.id]), nodes[0]?.id || '');
+      const cts = contacts().filter((c) => c.body.type !== 'self');
+      const auto = (n) => cts.find((c) => c.body.name.trim().toLowerCase() === String(n.name || '').trim().toLowerCase())?.rootId || '';
+      const rows = nodes.map((n) => [n, select([['', t('vss.noMatch')], ...cts.map((c) => [c.rootId, c.body.name])], auto(n))]);
+      fill(box, h('p', {}, t('vss.whoAmI', { title })), field(t('vss.meNode'), meSel),
+        h('details', {}, h('summary', { class: 'vw-link' }, t('vss.matchSides')), rows.map(([n, s]) => field(n.name || n.id, s))),
+        msg, h('div', { class: 'vw-actions' }, h('button', { class: 'vw-btn vw-primary', onclick: async () => {
+          const nodeContacts = {};
+          for (const [n, s] of rows) if (s.value && n.id !== meSel.value) nodeContacts[n.id] = s.value;
+          try { await wallet.linkSchema(sphereId, { schemaId, title, doc, holderNodeId: meSel.value, nodeContacts, source }); lifeMap = 'vss:' + schemaId; close(true); render(); }
+          catch (e) { msg.textContent = t('rl.failed', { msg: e.message }); }
+        } }, t('vss.save'))));
+    };
+    const start = async () => {
+      const linkIn = h('input', { type: 'url', placeholder: 'https://aeilus.institute/tools/vss/s/...' });
+      const mine = h('div', { class: 'vw-list' }, h('p', { class: 'vw-muted' }, t('vss.loading')));
+      fill(box, h('p', { class: 'vw-hint' }, t('vss.lead')), h('h3', {}, t('vss.mine')), mine,
+        h('h3', {}, t('vss.byLink')), h('form', { class: 'vw-inline', onsubmit: async (e) => {
+          e.preventDefault();
+          const m = String(linkIn.value).match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+          if (!m) { msg.textContent = t('vss.badLink'); return; }
+          try { const d = await fetchSchema(m[1]); chooseNode(m[1], d.title, d.doc, 'link'); } catch (err) { msg.textContent = err.message; }
+        } }, linkIn, h('button', { class: 'vw-btn', type: 'submit' }, t('vss.open'))),
+        h('button', { class: 'vw-btn vw-ghost', onclick: async () => {
+          const d = await pickFile();
+          if (!d) return;
+          const doc = d.format === 'aevri.vss' || (Array.isArray(d.nodes) && Array.isArray(d.flows)) ? d : null;
+          if (!doc) { msg.textContent = t('vss.notVss'); return; }
+          chooseNode('file-' + (await C.hashJson(doc)).slice(7, 19), doc.schema?.name || t('vss.fromFile'), doc, 'file');
+        } }, t('vss.file')), msg);
+      if (location.origin !== 'https://aeilus.institute') { fill(mine, h('p', { class: 'vw-muted' }, t('vss.onlySite'))); return; }
+      try {
+        const r = await fetch('/api/v1/vss/schemas', { credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' } });
+        if (r.status === 401 || r.status === 403) { fill(mine, h('p', { class: 'vw-muted' }, t('vss.signIn') + ' '), h('a', { href: '/auth/?backurl=' + encodeURIComponent('/tools/vledger/') }, t('ai.signInLink'))); return; }
+        const items = (await r.json()).items || [];
+        fill(mine, items.length ? items.map((it) => h('button', { class: 'vw-lrow', onclick: async () => { try { const d = await fetchSchema(it.id); chooseNode(it.id, it.title || d.title, d.doc, 'account'); } catch (e) { msg.textContent = e.message; } } },
+          h('span', { class: 'vw-lmain' }, it.title || it.id), h('span', { class: 'vw-chev' }, '›'))) : h('p', { class: 'vw-muted' }, t('vss.noneMine')));
+      } catch (e) { fill(mine, h('p', { class: 'vw-muted' }, e.message)); }
+    };
+    start();
+    return box;
+  });
 }
 
 // ---- timeline ----

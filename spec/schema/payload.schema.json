@@ -429,6 +429,42 @@
         },
         "note": {
           "$ref": "common.schema.json#/$defs/text"
+        },
+        "vss": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "schemaId",
+              "holderNodeId"
+            ],
+            "properties": {
+              "schemaId": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "title": {
+                "$ref": "common.schema.json#/$defs/line"
+              },
+              "holderNodeId": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "nodeContacts": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "common.schema.json#/$defs/uuid"
+                }
+              },
+              "source": {
+                "enum": [
+                  "account",
+                  "link",
+                  "file"
+                ]
+              }
+            }
+          }
         }
       }
     },

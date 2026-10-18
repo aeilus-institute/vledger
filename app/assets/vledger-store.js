@@ -286,6 +286,29 @@ export class Wallet {
     return this.add('assessment', { eventId: eventRootId, phase: 'realized', confidence: 'medium', reference: false, contributions: [], spent: [], ...fields });
   }
 
+  // Links a VSS schema to a sphere and keeps a copy of the schema document (SPEC 19)
+  async linkSchema(sphereId, { schemaId, title, doc, holderNodeId, nodeContacts = {}, source = 'link' }) {
+    const sys = this.get(sphereId);
+    if (!sys) throw new Error('no sphere');
+    if (!doc || !Array.isArray(doc.nodes) || !Array.isArray(doc.flows)) throw new Error('not a VSS schema');
+    if (!doc.nodes.some((n) => n.id === holderNodeId)) throw new Error('the holder node is not in the schema');
+    const originId = 'vss:' + schemaId;
+    const payloadHash = await C.hashJson(doc);
+    const imp = this.list('import').find((i) => i.body.originId === originId);
+    if (!imp) await this.add('import', { origin: source === 'file' ? 'file' : 'url', originId, payload: doc, payloadHash }, { source: 'vss' });
+    else if (imp.body.payloadHash !== payloadHash) await this.correct(imp.rootId, { ...imp.body, payload: doc, payloadHash });
+    const list = (sys.body.vss || []).filter((x) => x.schemaId !== schemaId);
+    list.push({ schemaId, title: String(title || doc.schema?.name || schemaId).slice(0, 300), holderNodeId, nodeContacts, source });
+    return this.correct(sphereId, { ...sys.body, vss: list });
+  }
+
+  schemaDoc(schemaId) { return this.list('import').find((i) => i.body.originId === 'vss:' + schemaId)?.body.payload || null; }
+
+  async unlinkSchema(sphereId, schemaId) {
+    const sys = this.get(sphereId);
+    return this.correct(sphereId, { ...sys.body, vss: (sys.body.vss || []).filter((x) => x.schemaId !== schemaId) });
+  }
+
   async importRegistryItems(doc, evaluations = [], { unit = 'ÆVRI reaction', today } = {}) {
     const reg = doc.registry;
     const day = today || C.nowIso().slice(0, 10);
