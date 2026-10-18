@@ -25,5 +25,5 @@ Owner's morning steps (RU): see `docs/VLEDGER/ANDROID_PILOT_README_RU.md`.
 - Signing certificate SHA-256: `6D:57:42:4B:68:11:E4:0E:A8:5E:B6:CB:DF:58:BE:C9:F1:7D:41:3F:0D:F0:AB:C6:03:09:C6:18:D7:E1:66:6F`.
 - Built with the toolchain set up by the 2dBrain session: JDK 17 `C:\Users\archi\Android\jdk-17`, SDK
   `C:\Users\archi\Android\Sdk`, Gradle `C:\Users\archi\Android\gradle-8.10.2`.
-- Not published yet (waits for the owner): `aeilus.institute/docroot/.well-known/assetlinks.json` with this
-  fingerprint; it removes the URL bar and makes wallet links open in the app.
+- Published with the owner's yes (2026-10-18): https://aeilus.institute/.well-known/assetlinks.json with this
+  fingerprint, confirmed by Google's Digital Asset Links API; the app runs full screen and wallet links open in it.
