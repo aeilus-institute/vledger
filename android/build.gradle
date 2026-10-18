@@ -1,0 +1,6 @@
+// Value Wallet pilot for Android: a Trusted Web Activity over the live wallet (aeilus.institute/tools/vledger/).
+// Chosen with Grok Heavy and Codex (docs/VLEDGER/ux-review/codex_android.md): same app, same origin, same Chrome
+// storage and sign-in, WebAuthn PRF biometrics; without Digital Asset Links Chrome shows its URL bar (custom tab).
+plugins {
+    id 'com.android.application' version '8.7.3' apply false
+}
