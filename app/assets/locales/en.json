@@ -749,5 +749,7 @@
   "vss.refresh": "Update from VSS",
   "vss.updated": "Schema updated",
   "vss.unlink": "Unlink",
-  "vss.unlinkQ": "Unlink this schema from the sphere? Events stay."
+  "vss.unlinkQ": "Unlink this schema from the sphere? Events stay.",
+  "start.oldBrowserTitle": "Update your browser",
+  "start.oldBrowser": "This browser cannot make the wallet's signatures (Ed25519). Update Chrome (version 137 or newer), Safari 17 or Firefox 129, then open the wallet again."
 }

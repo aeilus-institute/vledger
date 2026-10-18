@@ -273,9 +273,20 @@ function goalProgress(goalRootId) {
 
 // ---- start screen ----
 
+// The wallet signs with Ed25519 in Web Crypto (Chrome 137+, Safari 17+, Firefox 129+); older browsers cannot create
+// or open a wallet, so the start screen says so instead of hanging (found on an Android emulator with Chrome 124)
+let cryptoOk = null;
+async function cryptoSupport() {
+  if (cryptoOk === null) {
+    try { await crypto.subtle.generateKey({ name: 'Ed25519' }, false, ['sign', 'verify']); cryptoOk = true; } catch { cryptoOk = false; }
+  }
+  return cryptoOk;
+}
+
 async function renderStart() {
   const list = await guard(() => device.list()) || [];
   const box = h('div', { class: 'vw-start' },
+    (await cryptoSupport()) ? null : h('div', { class: 'vw-card vw-alert', role: 'alert' }, h('strong', {}, t('start.oldBrowserTitle')), h('p', {}, t('start.oldBrowser'))),
     h('p', { class: 'vw-lead' }, t('start.lead')),
     h('ul', { class: 'vw-facts' }, h('li', {}, t('start.f1')), h('li', {}, t('start.f2')), h('li', {}, t('start.f3'))));
   if (pending) box.prepend(h('div', { class: 'vw-card vw-notice', role: 'status' }, pending.kind === 'contact'
@@ -350,7 +361,9 @@ function createDialog() {
       if (p1.value !== p2.value) { msg.textContent = t('create.mismatch'); return; }
       if (!ack.checked) { msg.textContent = t('create.ackNeeded'); return; }
       btn.disabled = true; msg.textContent = t('create.wait');
-      wallet = await guard(() => Wallet.create(p1.value, { label: label.value.trim() }));
+      // errors are shown in the dialog itself: a toast would sit behind the modal (Android pilot, 2026-10-18)
+      try { wallet = await Wallet.create(p1.value, { label: label.value.trim() }); }
+      catch (err) { console.error(err); wallet = null; msg.textContent = (await cryptoSupport()) ? t('err.generic', { msg: err.message }) : t('start.oldBrowser'); }
       p1.value = p2.value = '';
       if (wallet) { close(true); touch(); tab = 'timeline'; render(); } else btn.disabled = false;
     } },
