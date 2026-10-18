@@ -5,3 +5,4 @@ local.properties
 secrets/
 *.apk
 *.p12
+dist/

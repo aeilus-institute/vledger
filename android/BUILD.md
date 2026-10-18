@@ -16,3 +16,14 @@ The keystore `secrets/pilot.p12` (alias `vledger-pilot`) and its password are ke
 versionCode.
 
 Owner's morning steps (RU): see `docs/VLEDGER/ANDROID_PILOT_README_RU.md`.
+
+## Build 0.1.0-pilot (2026-10-18)
+
+- APK: `android/dist/Value-Wallet-Pilot-0.1.0.apk` (408 883 bytes, APK Signature Scheme v2), a copy in
+  `C:\Users\archi\Downloads\`; SHA-256 of the file in `dist/*.sha256`.
+- Package `institute.aeilus.vledger.pilot`, versionCode 1, minSdk 26 (Android 8), targetSdk 35.
+- Signing certificate SHA-256: `6D:57:42:4B:68:11:E4:0E:A8:5E:B6:CB:DF:58:BE:C9:F1:7D:41:3F:0D:F0:AB:C6:03:09:C6:18:D7:E1:66:6F`.
+- Built with the toolchain set up by the 2dBrain session: JDK 17 `C:\Users\archi\Android\jdk-17`, SDK
+  `C:\Users\archi\Android\Sdk`, Gradle `C:\Users\archi\Android\gradle-8.10.2`.
+- Not published yet (waits for the owner): `aeilus.institute/docroot/.well-known/assetlinks.json` with this
+  fingerprint; it removes the URL bar and makes wallet links open in the app.
