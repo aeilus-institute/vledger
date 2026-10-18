@@ -896,7 +896,7 @@ function eventCard(ev, as) {
     (b.cases || []).filter((c) => c.status === 'declined').map((c) => h('p', { class: 'vw-muted vw-small' }, t('cs.declined', { reason: c.reason || '-' }))),
     eff !== null ? h('p', { class: 'vw-muted vw-small' }, t('ev.efficiency', { e: num(eff), net: pct(latest.body.v - latest.body.spentV) })) : null,
     h('div', { class: 'vw-actions' },
-      h('button', { class: 'vw-btn vw-ghost', onclick: () => assessDialog(ev.rootId, realized || null, { phase: 'realized' }) }, t('rx.more')),
+      h('button', { class: 'vw-btn vw-ghost', onclick: () => refineDialog(ev.rootId) }, t('rf.go')),
       latest && target ? h('button', { class: 'vw-btn', onclick: () => shareDialog(ev, latest, target) }, t('ev.share', { name: nameOf(target) })) : null,
       !b.receiptState && receiptTarget(ev) ? h('button', { class: 'vw-btn', onclick: () => confirmDialog(ev, receiptTarget(ev)) }, t('rc.btn')) : null,
       b.receiptState === 'matched' && !(b.stamps || []).length ? h('button', { class: 'vw-btn vw-ghost', onclick: async () => {
@@ -958,6 +958,7 @@ function assessmentView(a) {
   const rx = reactionOf(b);
   return h('div', { class: 'vw-assess' },
     rx !== null && b.phase === 'retro' ? h('div', { class: 'vw-chip' + (rx < 0 ? ' vw-neg' : '') }, t('rx.' + rx)) : null,
+    b.comparison && !(b.contributions || []).length ? h('div', { class: 'vw-muted vw-small' }, compareWords(b.comparison)) : null,
     typeof b.v === 'number' && (b.contributions || []).length ? h('div', { class: b.v < 0 ? 'vw-v vw-neg' : 'vw-v' }, t(b.v < 0 ? 'val.short.harm' : 'val.short', { v: pct(Math.abs(b.v)) })) : null,
     b.spentV > 0 ? h('div', { class: 'vw-muted vw-small' }, t('val.spentShort', { v: pct(b.spentV) })) : null,
     b.vet ? h('div', { class: 'vw-muted vw-small' }, t('vet.line', { out: num(b.vet.totals?.sumOut ?? 0), in: num(b.vet.totals?.sumIn ?? 0), n: b.vet.totals?.count ?? 0 })) : null,
@@ -1165,6 +1166,138 @@ function aevriImportDialog() {
     } }, h('p', {}, t('ai.lead')),
       h('label', { class: 'vw-check' }, mine, h('span', {}, t('ai.mine'))),
       h('p', { class: 'vw-hint' }, onSite ? t('ai.privacy') : t('ai.offSite')), msg, submitRow(t('ai.go')));
+  });
+}
+
+// replaceChildren prints null and arrays as text; keep only real nodes
+const fill = (box, ...items) => box.replaceChildren(...items.flat(Infinity).filter((x) => x != null && x !== false));
+
+// ---- refine: one assessment, refined by comparison or by goals (SPEC 17, UX review round 3) ----
+
+function compareWords(c) {
+  if (c.ratio == null) return t('cmp.hardSaved', { ref: c.referenceTitle || '' });
+  const words = t('cmp.r' + String(c.ratio).replace('.', '_') + (c.polarity === 'harm' ? 'h' : ''), { ref: c.referenceTitle || '' });
+  return typeof c.estV === 'number' ? words + ' · ' + t('cmp.est', { v: pct(Math.abs(c.estV)) }) : words;
+}
+
+function refineDialog(evRootId) {
+  const ev = wallet.get(evRootId);
+  if (!ev) return null;
+  const realized = assessments().filter((a) => a.body.eventId === evRootId && a.body.phase === 'realized').pop();
+  const rx = realized ? reactionOf(realized.body) : null;
+  return modal(t('rf.title'), (close) => h('div', {},
+    h('p', { class: 'vw-muted' }, phrase(ev)),
+    rx !== null ? h('p', {}, t('rf.saved', { r: t('rx.' + rx) })) : h('p', { class: 'vw-hint' }, t('rf.noReaction')),
+    h('div', { class: 'vw-list' },
+      h('button', { class: 'vw-lrow', onclick: () => { close(true); compareDialog(evRootId); } }, h('span', { class: 'vw-lmain' }, t('rf.compare'), h('small', {}, t('rf.compareHint'))), h('span', { class: 'vw-chev' }, '›')),
+      h('button', { class: 'vw-lrow', onclick: () => { close(true); goalsDialog(evRootId); } }, h('span', { class: 'vw-lmain' }, t('rf.goals'), h('small', {}, hasGoals() ? t('rf.goalsHint') : t('rf.goalsNone'))), h('span', { class: 'vw-chev' }, '›')),
+      h('button', { class: 'vw-lrow', onclick: () => { close(true); assessDialog(evRootId, realized || null, { phase: 'realized' }); } }, h('span', { class: 'vw-lmain' }, t('rf.cost'), h('small', {}, t('rf.costHint'))), h('span', { class: 'vw-chev' }, '›')))));
+}
+
+// Candidate references: same sphere first, same polarity, a goal value preferred, marked references first
+function referenceCandidates(ev, polarity) {
+  const latest = new Map();
+  for (const a of assessments()) if (a.body.eventId !== ev.rootId) latest.set(a.body.eventId, a.body);
+  const out = [];
+  for (const [eid, b] of latest) {
+    const e = wallet.get(eid);
+    if (!e) continue;
+    const rx = reactionOf(b);
+    const pos = (typeof b.v === 'number' && (b.contributions || []).length) ? b.v > 0 : rx !== null ? rx >= 20 : null;
+    const neg = (typeof b.v === 'number' && (b.contributions || []).length) ? b.v < 0 : rx !== null ? rx < 0 : null;
+    if (polarity === 'benefit' ? pos !== true : neg !== true) continue;
+    const goalV = (b.contributions || []).length && typeof b.v === 'number' ? b.v : null;
+    const score = (e.body.systemId === ev.body.systemId ? 4 : 0) + (b.reference ? 2 : 0) + (goalV !== null ? 1 : 0);
+    out.push({ eid, title: phrase(e), refV: goalV, score, at: String(e.body.occurredAt) });
+  }
+  return out.sort((a, b) => b.score - a.score || b.at.localeCompare(a.at));
+}
+
+function compareDialog(evRootId) {
+  const ev = wallet.get(evRootId);
+  return modal(t('cmp.title'), (close) => {
+    const box = h('div', {});
+    let polarity = null, idx = 0, cands = [];
+    const step1 = () => fill(box, h('p', { class: 'vw-muted' }, phrase(ev)), h('p', { class: 'vw-label' }, t('cmp.q')),
+      h('div', { class: 'vw-reacts' },
+        h('button', { type: 'button', class: 'vw-react', onclick: () => { polarity = 'benefit'; step2(); } }, t('cmp.benefit')),
+        h('button', { type: 'button', class: 'vw-react is-neg', onclick: () => { polarity = 'harm'; step2(); } }, t('cmp.harm')),
+        h('button', { type: 'button', class: 'vw-react', onclick: () => fill(box, h('p', {}, t('cmp.unclear')), h('div', { class: 'vw-actions' }, h('button', { class: 'vw-btn', onclick: () => close(true) }, t('close')))) }, t('cmp.unclearBtn'))));
+    const step2 = () => {
+      cands = referenceCandidates(ev, polarity);
+      if (!cands.length) {
+        fill(box, h('p', {}, t(polarity === 'harm' ? 'cmp.noneHarm' : 'cmp.none')),
+          h('div', { class: 'vw-actions' }, h('button', { class: 'vw-btn vw-primary', onclick: () => { close(true); goalsDialog(evRootId); } }, t('rf.goals')), h('button', { class: 'vw-btn', onclick: () => close(true) }, t('close'))));
+        return;
+      }
+      const c = cands[idx % cands.length];
+      const save = async (ratio) => {
+        const comparison = { referenceEventId: c.eid, referenceTitle: c.title.slice(0, 300), polarity, ratio, at: C.nowIso() };
+        if (c.refV !== null) comparison.refV = c.refV;
+        const est = V.comparisonEstimate(c.refV, ratio, polarity);
+        if (est !== null) comparison.estV = est;
+        await guard(() => wallet.refine(evRootId, { comparison }));
+        close(true); render(); toast(compareWords(comparison));
+      };
+      fill(box, h('p', { class: 'vw-muted' }, phrase(ev)),
+        h('p', { class: 'vw-label' }, t(polarity === 'harm' ? 'cmp.vsHarm' : 'cmp.vs')),
+        h('div', { class: 'vw-card' }, h('strong', {}, c.title), h('div', { class: 'vw-muted vw-small' }, c.at.slice(0, 10) + (c.refV !== null ? ' · ' + t('cmp.refGoal', { v: pct(Math.abs(c.refV)) }) : ' · ' + t('cmp.refRel')))),
+        h('div', { class: 'vw-reacts' }, [0.5, 1, 2].map((r) => h('button', { type: 'button', class: 'vw-react', onclick: () => save(r) }, t('cmp.b' + String(r).replace('.', '_')))),
+          h('button', { type: 'button', class: 'vw-react', onclick: () => save(null) }, t('cmp.bHard'))),
+        cands.length > 1 ? h('button', { class: 'vw-link', onclick: () => { idx++; step2(); } }, t('cmp.other', { n: cands.length })) : null,
+        h('p', { class: 'vw-hint' }, t('cmp.hint')));
+    };
+    step1();
+    return box;
+  });
+}
+
+// By goals in two taps: a goal of the sphere, then an amount in the goal's units or about 1, 5, 10 % of it
+function goalsDialog(evRootId) {
+  const ev = wallet.get(evRootId);
+  const realized = assessments().filter((a) => a.body.eventId === evRootId && a.body.phase === 'realized').pop();
+  const all = wallet.list('goal').filter((g) => g.body.status === 'active');
+  const near = all.filter((g) => g.body.systemId && g.body.systemId === ev.body.systemId);
+  return modal(t('gq.title'), (close) => {
+    const box = h('div', {});
+    const pickGoal = () => {
+      if (!all.length) {
+        fill(box, h('p', {}, t('gq.none')), h('div', { class: 'vw-actions' }, h('button', { class: 'vw-btn vw-primary', onclick: () => { close(true); goalDialog(); } }, t('life.addGoal'))));
+        return;
+      }
+      const shown = (near.length ? near : all).slice(0, 3);
+      const others = all.filter((g) => !shown.includes(g));
+      const other = others.length ? select([['', t('gq.other')], ...others.map((g) => [g.rootId, (g.body.systemId ? sysTitle(g.body.systemId) + ' · ' : '') + g.body.title])], '') : null;
+      if (other) other.addEventListener('change', () => { const g = all.find((x) => x.rootId === other.value); if (g) pickAmount(g); });
+      fill(box, h('p', { class: 'vw-muted' }, phrase(ev)), h('p', { class: 'vw-label' }, t('gq.q')),
+        h('div', { class: 'vw-list' }, shown.map((g) => h('button', { class: 'vw-lrow', onclick: () => pickAmount(g) }, h('span', { class: 'vw-lmain' }, g.body.title, h('small', {}, sysTitle(g.body.systemId))), h('span', { class: 'vw-chev' }, '›')))),
+        other ? field(t('gq.otherLabel'), other) : null);
+    };
+    const pickAmount = (g) => {
+      const save = async (c) => {
+        const prev = (realized?.body.contributions || []).filter((x) => x.goalId !== g.rootId);
+        const contributions = [...prev, { goalId: g.rootId, ...c }];
+        const r = valueOf(contributions, realized?.body.spent || []);
+        const fields = { contributions, v: r.v };
+        if ((realized?.body.spent || []).length) fields.spentV = r.spentV;
+        await guard(() => wallet.refine(evRootId, fields));
+        close(true); render(); toast(t('gq.saved', { v: pct(Math.abs(r.v)) }));
+      };
+      const unit = g.body.unit && g.body.N ? g.body.unit : null;
+      const opts = unit
+        ? [1, 2, 5].map((n) => [t('gq.units', { n, unit, of: g.body.N }), { c: n }])
+        : [[t('gq.pct', { p: 1 }), { k: 0.01 }], [t('gq.pct', { p: 5 }), { k: 0.05 }], [t('gq.pct', { p: 10 }), { k: 0.1 }]];
+      const custom = h('input', { type: 'number', step: 'any', placeholder: unit ? t('gq.inUnits', { unit }) : t('gq.inPct') });
+      fill(box, h('p', { class: 'vw-muted' }, g.body.title), h('p', { class: 'vw-label' }, t('gq.how')),
+        h('div', { class: 'vw-reacts' }, opts.map(([label, c]) => h('button', { type: 'button', class: 'vw-react', onclick: () => save(c) }, label)),
+          h('button', { type: 'button', class: 'vw-react is-neg', onclick: () => save(unit ? { c: -1 } : { k: -0.05 }) }, t('gq.back'))),
+        h('form', { class: 'vw-inline', onsubmit: (e) => { e.preventDefault(); const n = Number(custom.value); if (!Number.isFinite(n) || custom.value === '') return; save(unit ? { c: n } : { k: n / 100 }); } },
+          field(t('gq.custom'), custom), h('button', { class: 'vw-btn', type: 'submit' }, t('save'))),
+        h('p', { class: 'vw-hint' }, t('gq.hint')),
+        h('button', { class: 'vw-link', onclick: pickGoal }, '‹ ' + t('gq.back2')));
+    };
+    pickGoal();
+    return box;
   });
 }
 

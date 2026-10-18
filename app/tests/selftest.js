@@ -183,6 +183,17 @@ async function run() {
   let noPrf = null; try { await Bio.enroll(bw.session, { rpId: 'localhost', auth: auth(secret, { prf: false }) }); } catch (e) { noPrf = e.code; }
   ok(noPrf === 'no-prf', 'without PRF nothing is enabled (the passphrase stays)');
 
+  // Refine: comparison with a reference and goal contributions keep the reaction (SPEC 17)
+  ok(V.comparisonEstimate(0.02, 2, 'benefit') === 0.04 && V.comparisonEstimate(0.02, 0.5, 'harm') === -0.01 && V.comparisonEstimate(null, 2, 'benefit') === null && V.comparisonEstimate(0.02, 3, 'benefit') === null,
+    'comparison estimate: coarse ratios only, harm is negative, no reference value means no number');
+  const rw = await Wallet.create('refine test wallet passphrase', { label: 'R', store: null, iterations: 1000 });
+  const rev = await rw.add('event', { actor: rw.selfContact().rootId, action: 'read', objects: [], affected: [], role: 'user', occurredAt: '2026-10-18', status: 'confirmed' });
+  await rw.react(rev, 100);
+  await rw.refine(rev, { comparison: { referenceEventId: rev, polarity: 'benefit', ratio: 2 } });
+  await rw.refine(rev, { contributions: [{ goalId: rev, k: 0.05 }], v: 0.01 });
+  const ra = rw.list('assessment');
+  ok(ra.length === 1 && ra[0].body.reaction === 100 && ra[0].body.comparison.ratio === 2 && ra[0].body.v === 0.01, 'refining adds comparison and goals to the same assessment and keeps the reaction');
+
   const failed = results.filter((r) => !r.ok).length;
   document.getElementById('sum').textContent = failed ? `${failed} of ${results.length} failed` : `all ${results.length} passed`;
   window.__result = { passed: results.length - failed, failed, results };

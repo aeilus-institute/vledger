@@ -911,6 +911,45 @@
             500
           ]
         },
+        "comparison": {
+          "type": "object",
+          "required": [
+            "referenceEventId",
+            "polarity",
+            "ratio"
+          ],
+          "properties": {
+            "referenceEventId": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "referenceTitle": {
+              "$ref": "common.schema.json#/$defs/line"
+            },
+            "polarity": {
+              "enum": [
+                "benefit",
+                "harm"
+              ]
+            },
+            "ratio": {
+              "enum": [
+                0.5,
+                1,
+                2,
+                null
+              ]
+            },
+            "refV": {
+              "type": "number"
+            },
+            "estV": {
+              "type": "number"
+            },
+            "at": {
+              "$ref": "common.schema.json#/$defs/time"
+            }
+          }
+        },
         "vet": {
           "type": "object",
           "required": [

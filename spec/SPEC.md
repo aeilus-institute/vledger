@@ -347,7 +347,12 @@ their own layer and never adds them to its planned VET estimate. Estimates stay 
 An assessment MAY carry `reaction`, one of -100, -20, 0, 20, 100, 500 (harmed me, lost my time, neutral,
 interesting, hooked, I will apply it): the scale readers use on the institute site. A reaction alone is a complete
 assessment; it is not converted into `v`. When the holder has goals, a wallet SHOULD offer to calibrate reaction-only
-assessments by adding `contributions`, which then give `v` as usual. A value system made from a registry keeps
+assessments by adding `contributions`, which then give `v` as usual.
+
+An assessment MAY carry `comparison`: `{referenceEventId, referenceTitle, polarity: benefit | harm, ratio: 0.5 | 1 | 2 | null
+(hard to compare), refV?, estV?}`. When the reference has a goal value `refV`, `estV = ±|refV| x ratio` is an approximate
+estimate shown as "≈"; it is never written into `v`, which stays the goal value. Without `refV` the comparison stays
+relative ("about twice X"). A value system made from a registry keeps
 `registryUrl` and `registrySystemId`, one per system of that registry.
 
 ## 17. One-click reactions (d6)

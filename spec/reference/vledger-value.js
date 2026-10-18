@@ -194,3 +194,13 @@ export function reactionStats(events, reactions) {
   out.wasted.sort((a, b) => a.reaction - b.reaction || String(b.occurredAt).localeCompare(String(a.occurredAt)));
   return out;
 }
+
+// Comparison with one reference (SPEC 17, round 3 of the UX review): coarse ratios only. A reference with a goal
+// value gives an approximate estimate; without one the comparison stays relative ("about twice X"). Harm compares
+// with harm. Never a substitute for goal value: kept apart as estV.
+export const COMPARE_RATIOS = [0.5, 1, 2];
+export function comparisonEstimate(refV, ratio, polarity) {
+  if (!COMPARE_RATIOS.includes(ratio) || typeof refV !== 'number' || !Number.isFinite(refV) || refV === 0) return null;
+  const sign = polarity === 'harm' ? -1 : 1;
+  return sign * Math.abs(refV) * ratio;
+}

@@ -58,6 +58,9 @@ defs = {
         'v': {'type': 'number'}, 'spentV': {'type': 'number', 'minimum': 0}, 'planCount': {'type': 'number', 'minimum': 0, 'maximum': 1},
         'reference': {'type': 'boolean'}, 'confidence': {'enum': ['low', 'medium', 'high']}, 'reasons': TEXT,
         'checkAfter': c('date'), 'reaction': {'enum': [-100, -20, 0, 20, 100, 500]},
+        'comparison': {'type': 'object', 'required': ['referenceEventId', 'polarity', 'ratio'], 'properties': {
+            'referenceEventId': ID, 'referenceTitle': LINE, 'polarity': {'enum': ['benefit', 'harm']}, 'ratio': {'enum': [0.5, 1, 2, None]},
+            'refV': {'type': 'number'}, 'estV': {'type': 'number'}, 'at': c('time')}},
         'vet': {'type': 'object', 'required': ['snapshotHash'], 'properties': {'boardId': {'type': 'string'}, 'resultId': {'type': 'string'}, 'snapshotHash': c('sha256'),
             'revision': {'type': 'number'}, 'totals': {'type': 'object'}, 'axes': {'type': 'object'}, 'receivedAt': c('time'), 'boardSnapshot': {'type': 'object'}}}}},
     'fact': {'type': 'object', 'required': ['text', 'certainty'], 'properties': {

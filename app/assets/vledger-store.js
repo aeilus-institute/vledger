@@ -279,6 +279,13 @@ export class Wallet {
     return this.add('assessment', { eventId: eventRootId, phase: 'realized', confidence: 'medium', reference: false, contributions: [], spent: [], reaction: value });
   }
 
+  // Adds to the realized assessment of an event (comparison, goal contributions), creating it if needed (SPEC 17)
+  async refine(eventRootId, fields) {
+    const cur = this.list('assessment').filter((a) => a.body.eventId === eventRootId && a.body.phase === 'realized').pop();
+    if (cur) return this.correct(cur.rootId, { ...cur.body, ...fields });
+    return this.add('assessment', { eventId: eventRootId, phase: 'realized', confidence: 'medium', reference: false, contributions: [], spent: [], ...fields });
+  }
+
   async importRegistryItems(doc, evaluations = [], { unit = 'ÆVRI reaction', today } = {}) {
     const reg = doc.registry;
     const day = today || C.nowIso().slice(0, 10);
