@@ -191,3 +191,27 @@ details input[type="number"] { width: 96px; }
 .vw-rxlegend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: 0; }
 .vw-rxlist { list-style: none; padding: 0; } .vw-rxlist li { margin: 6px 0; }
 .vw-table .vw-wide { width: 45%; }
+.vw-lrow { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 4px; border: 0; border-bottom: 1px solid var(--av-line); background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.vw-lrow:hover { background: var(--av-soft); }
+.vw-lrow.vw-static { cursor: default; }
+.vw-lmain { flex: 1; min-width: 0; }
+.vw-lmain small { display: block; color: var(--av-muted); font-size: 0.85rem; margin-top: 2px; }
+.vw-chev { color: var(--av-muted); font-size: 1.3rem; }
+.vw-cover { flex: 0 0 64px; height: 6px; border-radius: 3px; background: var(--av-soft); overflow: hidden; }
+.vw-cover i { display: block; height: 100%; background: var(--av-accent); }
+.vw-dir { flex: 0 0 22px; font-size: 1.1rem; text-align: center; }
+.vw-dir.is-in { color: var(--av-success); } .vw-dir.is-out { color: var(--av-accent); }
+.vw-path { border: 0; background: none; color: var(--av-accent); font: inherit; font-size: 0.9rem; padding: 4px 0; cursor: pointer; }
+.vw-ltitle { margin: 2px 0 12px; }
+.vw-sheet { border: 1px solid var(--av-line); border-radius: 10px; padding: 4px 10px; margin: 0 0 12px; background: var(--av-surface); }
+.vw-kpis3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+.vw-seg { display: flex; background: var(--av-soft); border-radius: 999px; padding: 3px; margin: 4px 0 8px; }
+.vw-seg button { flex: 1; border: 0; background: none; padding: 6px; border-radius: 999px; font: inherit; font-size: 0.9rem; color: var(--av-muted); cursor: pointer; }
+.vw-seg button.is-on { background: var(--av-surface); color: var(--av-ink); }
+.vw-right { text-align: right; }
+.vw-map svg { max-width: 520px; display: block; }
+.vw-node-me { fill: var(--av-soft); stroke: var(--av-line); }
+.vw-node rect { fill: var(--av-surface); stroke: var(--av-accent); cursor: pointer; }
+.vw-node-t { fill: var(--av-ink); font-size: 12px; }
+.vw-node-n { fill: var(--av-muted); font-size: 11px; }
+.vw-list { display: flex; flex-direction: column; }

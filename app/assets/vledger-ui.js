@@ -63,6 +63,8 @@ async function runPending() {
   }
 }
 let tab = 'timeline';
+let lifePath = []; // Life tab: [{t:'g', id}, {t:'s', id}, {t:'x', s, cp, dir}, {t:'p', cp}]
+let lifeMode = 'ex', lifeMap = false, lifeSheet = null;
 let filters = { system: '', role: '', contact: '', assessed: '' };
 let period = '90';
 let idleTimer = null;
@@ -211,6 +213,26 @@ const withOwner = (e) => {
   return b;
 };
 const sysTitle = (id) => (id ? wallet.get(id)?.body.title : '') || t('sys.none');
+// The group of a sphere (Family, Work, States, ...): set by the holder; a sphere made from a registry falls into the
+// group of the registry owner until the holder moves it
+function groupOf(sys) {
+  if (sys.body.group) return sys.body.group;
+  if (sys.body.registryUrl) {
+    const imp = wallet.list('import').find((i) => i.body.originId === sys.body.registryUrl);
+    const name = imp?.body.payload?.registry?.owner?.card?.name;
+    if (name) return name.replace(/^.*\((.+)\)$/, '$1');
+  }
+  return t('life.otherGroup');
+}
+
+// The exchange an event belongs to (Codex, Grok round 2): the other side and the direction from the holder
+function exchangeOf(e) {
+  const b = e.body, me = selfId();
+  const owner = b.registryRef?.owner ? wallet.contactByAddress(b.registryRef.owner)?.rootId : null;
+  if (b.role === 'actor') return { cp: (b.affected || []).find((x) => x !== me) || owner || null, dir: 'out' };
+  if (b.role === 'user') return { cp: (b.actor && b.actor !== me ? b.actor : owner) || null, dir: 'in' };
+  return { cp: b.actor && b.actor !== me ? b.actor : owner, dir: 'in' };
+}
 
 function phrase(ev) {
   const b = ev.body;
@@ -568,15 +590,224 @@ async function checkRecovery(rq) {
 
 // ---- tabs ----
 
-const TABS = ['timeline', 'contacts', 'systems', 'analytics', 'inbox', 'settings'];
+// Main tabs (owner, 2026-10-18, after review with Grok Heavy and Codex): Log, Life, Review; the rest under More
+const TABS = ['timeline', 'life', 'review', 'more'];
+const MORE = ['contacts', 'systems', 'analytics', 'inbox', 'settings'];
 
 function renderWallet() {
   const inboxCount = events(true).filter((e) => e.body.status === 'suggested').length + wallet.list('message-in').filter((m) => m.body.state === 'new').length;
+  const assessedIds = new Set(assessments().map((a) => a.body.eventId));
+  const openCount = events().filter((e) => !assessedIds.has(e.rootId)).length;
+  const current = MORE.includes(tab) ? 'more' : tab;
   const nav = h('nav', { class: 'vw-tabs', role: 'tablist' }, TABS.map((k) =>
-    h('button', { role: 'tab', 'aria-selected': String(tab === k), class: tab === k ? 'is-on' : '', onclick: () => { tab = k; render(); } },
-      t('tab.' + k), k === 'inbox' && inboxCount ? h('span', { class: 'vw-badge' }, String(inboxCount)) : null)));
-  const body = { timeline: tabTimeline, contacts: tabContacts, systems: tabSystems, analytics: tabAnalytics, inbox: tabInbox, settings: tabSettings }[tab]();
-  return h('div', {}, noticeBanner(), nav, h('section', { class: 'vw-panel', role: 'tabpanel' }, body));
+    h('button', { role: 'tab', 'aria-selected': String(current === k), class: current === k ? 'is-on' : '', onclick: () => { tab = k; if (k === 'life') lifePath = []; render(); } },
+      t('tab.' + k), k === 'review' && openCount ? h('span', { class: 'vw-badge' }, String(openCount)) : null,
+      k === 'more' && inboxCount ? h('span', { class: 'vw-badge' }, String(inboxCount)) : null)));
+  const views = { timeline: tabTimeline, life: tabLife, review: tabReview, more: tabMore, contacts: tabContacts, systems: tabSystems, analytics: tabAnalytics, inbox: tabInbox, settings: tabSettings };
+  const body = views[tab]();
+  const back = MORE.includes(tab) ? h('button', { class: 'vw-path', onclick: () => { tab = 'more'; render(); } }, '‹ ' + t('tab.more')) : null;
+  return h('div', {}, noticeBanner(), nav, h('section', { class: 'vw-panel', role: 'tabpanel' }, back, body));
+}
+
+function tabMore() {
+  const inboxCount = events(true).filter((e) => e.body.status === 'suggested').length + wallet.list('message-in').filter((m) => m.body.state === 'new').length;
+  return h('div', { class: 'vw-list' }, MORE.map((k) => h('button', { class: 'vw-lrow', onclick: () => { tab = k; render(); } },
+    h('span', { class: 'vw-lmain' }, t('tab.' + k)), k === 'inbox' && inboxCount ? h('span', { class: 'vw-badge' }, String(inboxCount)) : null, h('span', { class: 'vw-chev', 'aria-hidden': 'true' }, '›'))));
+}
+
+function tabReview() {
+  const assessedIds = new Set(assessments().map((a) => a.body.eventId));
+  const open = events().filter((e) => !assessedIds.has(e.rootId)).sort((a, b) => String(b.body.occurredAt).localeCompare(String(a.body.occurredAt)));
+  const calib = hasGoals() ? assessments().filter(needsCalibration) : [];
+  const as = assessments();
+  return [
+    h('div', { class: 'vw-card' },
+      h('p', { class: 'vw-lead' }, open.length ? t('q.left', { n: open.length }) : t('rv.none')),
+      open.length ? h('button', { class: 'vw-btn vw-primary', onclick: () => queueDialog(open.map((e) => e.rootId)) }, t('q.go')) : null),
+    calib.length ? h('div', { class: 'vw-card' }, h('p', {}, t('cal.left', { n: calib.length })), h('button', { class: 'vw-btn', onclick: () => calibrate(calib) }, t('cal.go'))) : null,
+    open.slice(0, 20).map((e) => eventCard(e, as)),
+  ];
+}
+
+// ---- life: Life > Group > Sphere > Exchange > Event (owner, 2026-10-18) ----
+
+function lifeStats(evs) {
+  const rxs = assessments().map((a) => ({ eventId: a.body.eventId, phase: a.body.phase, reaction: reactionOf(a.body), createdAt: a.createdAt })).filter((r) => r.reaction !== null);
+  const ids = new Set(assessments().map((a) => a.body.eventId));
+  const st = V.reactionStats(evs.map((e) => ({ id: e.rootId, occurredAt: e.body.occurredAt, systemId: e.body.systemId })), rxs);
+  return { events: evs.length, assessed: evs.filter((e) => ids.has(e.rootId)).length, rx: st.total };
+}
+
+function lifeKpis(evs) {
+  const s = lifeStats(evs), T = s.rx;
+  const useful = T.assessed < 10 ? String(T.useful) : Math.round((T.useful / T.assessed) * 100) + '%';
+  return h('div', { class: 'vw-kpis vw-kpis3' },
+    h('div', { class: 'vw-kpi' }, h('div', { class: 'vw-kpi-n' }, `${s.assessed} / ${s.events}`), h('div', { class: 'vw-muted' }, t('life.k.assessed'))),
+    h('div', { class: 'vw-kpi' }, h('div', { class: 'vw-kpi-n' }, T.assessed ? useful : '-'), h('div', { class: 'vw-muted' }, t('life.k.useful'))),
+    h('div', { class: 'vw-kpi' }, h('div', { class: 'vw-kpi-n' }, String(T.wasted)), h('div', { class: 'vw-muted' }, t('life.k.wasted'))));
+}
+
+const coverBar = (evs) => {
+  const ids = new Set(assessments().map((a) => a.body.eventId));
+  const p = evs.length ? Math.round((evs.filter((e) => ids.has(e.rootId)).length / evs.length) * 100) : 0;
+  return h('span', { class: 'vw-cover', title: p + '%' }, h('i', { style: `width:${p}%` }));
+};
+const lrow = (main, sub, onclick, extra) => h('button', { class: 'vw-lrow', onclick }, extra || null,
+  h('span', { class: 'vw-lmain' }, main, sub ? h('small', {}, sub) : null), h('span', { class: 'vw-chev', 'aria-hidden': 'true' }, '›'));
+const evWord = (n) => t(n === 1 ? 'life.ev1' : 'life.evN', { n });
+
+function lifeTitle(p) {
+  if (!p) return t('life.title');
+  if (p.t === 'g') return p.id;
+  if (p.t === 's') return sysTitle(p.id);
+  if (p.t === 'x') return p.dir === 'in' ? t('life.x.in', { name: nameOf(p.cp) }) : t('life.x.out', { name: nameOf(p.cp) });
+  if (p.t === 'p') return nameOf(p.cp);
+  return '';
+}
+
+function lifeHead() {
+  const cur = lifePath[lifePath.length - 1];
+  const out = [];
+  if (cur) {
+    const parent = lifePath.length > 1 ? lifeTitle(lifePath[lifePath.length - 2]) : t('life.title');
+    out.push(h('button', { class: 'vw-path', 'aria-expanded': String(lifeSheet === 'up'), onclick: () => { lifeSheet = lifeSheet === 'up' ? null : 'up'; render(); } }, '‹ ' + parent + ' ', h('span', { class: 'vw-muted' }, '⌃')));
+    if (lifeSheet === 'up') out.push(h('div', { class: 'vw-sheet' }, [null, ...lifePath.slice(0, -1)].map((p, i) =>
+      h('button', { class: 'vw-lrow', onclick: () => { lifePath = lifePath.slice(0, i); lifeSheet = null; render(); } }, h('span', { class: 'vw-lmain' }, lifeTitle(p))))));
+  }
+  const siblings = cur?.t === 's' ? systems().filter((s) => s.body.status === 'active' && groupOf(s) === groupOf(wallet.get(cur.id) || { body: {} }) && s.rootId !== cur.id) : [];
+  out.push(h('h2', { class: 'vw-ltitle' }, lifeTitle(cur), siblings.length ? h('button', { class: 'vw-link', 'aria-label': t('life.siblings'), onclick: () => { lifeSheet = lifeSheet === 'sib' ? null : 'sib'; render(); } }, ' ▾') : null));
+  if (lifeSheet === 'sib' && siblings.length) out.push(h('div', { class: 'vw-sheet' }, siblings.map((s) => h('button', { class: 'vw-lrow', onclick: () => { lifePath[lifePath.length - 1] = { t: 's', id: s.rootId }; lifeSheet = null; render(); } }, h('span', { class: 'vw-lmain' }, s.body.title)))));
+  return out;
+}
+
+const goLife = (p) => { lifePath.push(p); lifeSheet = null; lifeMode = 'ex'; lifeMap = false; render(); };
+
+function tabLife() {
+  const cur = lifePath[lifePath.length - 1];
+  const all = events();
+  const out = [lifeHead()];
+  if (!cur) {
+    const groups = new Map();
+    for (const s of systems().filter((x) => x.body.status === 'active')) {
+      const g = groupOf(s);
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(s);
+    }
+    out.push(lifeKpis(all));
+    for (const [g, list] of [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+      const ids = new Set(list.map((s) => s.rootId));
+      const evs = all.filter((e) => ids.has(e.body.systemId));
+      out.push(lrow(g, t('life.groupSub', { s: list.length, e: evWord(evs.length) }), () => goLife({ t: 'g', id: g }), coverBar(evs)));
+    }
+    const loose = all.filter((e) => !e.body.systemId || !wallet.get(e.body.systemId));
+    if (loose.length) out.push(lrow(t('life.unsorted'), evWord(loose.length), () => goLife({ t: 's', id: '' }), coverBar(loose)));
+    if (!systems().length) out.push(h('p', { class: 'vw-hint' }, t('life.empty')));
+    return out;
+  }
+  if (cur.t === 'g') {
+    const list = systems().filter((s) => s.body.status === 'active' && groupOf(s) === cur.id);
+    out.push(lifeKpis(all.filter((e) => list.some((s) => s.rootId === e.body.systemId))));
+    for (const s of list) {
+      const evs = all.filter((e) => e.body.systemId === s.rootId);
+      const sides = new Set(evs.map((e) => exchangeOf(e).cp).filter(Boolean));
+      out.push(lrow(s.body.title, t('life.sphereSub', { p: sides.size, e: evWord(evs.length) }), () => goLife({ t: 's', id: s.rootId }), coverBar(evs)));
+    }
+    return out;
+  }
+  if (cur.t === 's') return out.concat(lifeSphere(cur.id, all));
+  if (cur.t === 'x') {
+    const evs = all.filter((e) => (e.body.systemId || '') === cur.s && (() => { const x = exchangeOf(e); return x.cp === cur.cp && x.dir === cur.dir; })())
+      .sort((a, b) => String(b.body.occurredAt).localeCompare(String(a.body.occurredAt)));
+    out.push(lifeKpis(evs), evs.map((e) => eventCard(e, assessments())));
+    if (cur.cp) out.push(h('button', { class: 'vw-link', onclick: () => goLife({ t: 'p', cp: cur.cp }) }, t('life.aboutSide', { name: nameOf(cur.cp) })));
+    return out;
+  }
+  if (cur.t === 'p') {
+    const evs = all.filter((e) => exchangeOf(e).cp === cur.cp);
+    out.push(lifeKpis(evs));
+    const spheres = [...new Set(evs.map((e) => e.body.systemId || ''))];
+    out.push(h('h3', {}, t('life.inSpheres')));
+    for (const sid of spheres) {
+      const se = evs.filter((e) => (e.body.systemId || '') === sid);
+      out.push(lrow(sid ? sysTitle(sid) : t('life.unsorted'), evWord(se.length), () => goLife({ t: 's', id: sid }), coverBar(se)));
+    }
+    return out;
+  }
+  return out;
+}
+
+// A sphere: exchanges (default, as a list with arrows or a map with me on the left), events, goals
+function lifeSphere(sid, all) {
+  const evs = all.filter((e) => (e.body.systemId || '') === sid && (sid || !e.body.systemId || !wallet.get(e.body.systemId)));
+  const ex = new Map();
+  for (const e of evs) {
+    const x = exchangeOf(e);
+    const k = (x.cp || '') + '|' + x.dir;
+    if (!ex.has(k)) ex.set(k, { cp: x.cp, dir: x.dir, evs: [] });
+    ex.get(k).evs.push(e);
+  }
+  const list = [...ex.values()].sort((a, b) => b.evs.length - a.evs.length);
+  const seg = h('div', { class: 'vw-seg', role: 'tablist' }, ['ex', 'ev', 'gl'].map((m) =>
+    h('button', { role: 'tab', 'aria-selected': String(lifeMode === m), class: lifeMode === m ? 'is-on' : '', onclick: () => { lifeMode = m; render(); } }, t('life.m.' + m))));
+  const out = [lifeKpis(evs), seg];
+  if (lifeMode === 'ev') {
+    out.push(evs.sort((a, b) => String(b.body.occurredAt).localeCompare(String(a.body.occurredAt))).map((e) => eventCard(e, assessments())));
+  } else if (lifeMode === 'gl') {
+    const goals = wallet.list('goal').filter((g) => g.body.systemId === sid && g.body.status === 'active');
+    out.push(goals.length ? goals.map((g) => h('div', { class: 'vw-lrow vw-static' }, h('span', { class: 'vw-lmain' }, g.body.title, g.body.why ? h('small', {}, g.body.why) : null)))
+      : h('p', { class: 'vw-hint' }, t('life.noGoals')));
+    if (sid) out.push(h('button', { class: 'vw-btn', onclick: () => goalDialog() }, t('life.addGoal')));
+  } else {
+    out.push(h('div', { class: 'vw-right' }, h('button', { class: 'vw-link', onclick: () => { lifeMap = !lifeMap; render(); } }, lifeMap ? t('life.asList') : t('life.asMap'))));
+    if (lifeMap) out.push(sphereMap(list.slice(0, 10)));
+    else {
+      const shown = list.slice(0, 7);
+      out.push(shown.map((x) => lrow(x.dir === 'in' ? t('life.x.in', { name: x.cp ? nameOf(x.cp) : t('cp.unknown') }) : t('life.x.out', { name: x.cp ? nameOf(x.cp) : t('cp.unknown') }),
+        evWord(x.evs.length), () => goLife({ t: 'x', s: sid, cp: x.cp, dir: x.dir }), h('span', { class: 'vw-dir ' + (x.dir === 'in' ? 'is-in' : 'is-out'), 'aria-hidden': 'true' }, x.dir === 'in' ? '↙' : '↗'))));
+      if (list.length > shown.length) out.push(h('details', {}, h('summary', { class: 'vw-link' }, t('life.allSides', { n: list.length })),
+        list.slice(shown.length).map((x) => lrow((x.dir === 'in' ? '↙ ' : '↗ ') + (x.cp ? nameOf(x.cp) : t('cp.unknown')), evWord(x.evs.length), () => goLife({ t: 'x', s: sid, cp: x.cp, dir: x.dir })))));
+      if (!list.length) out.push(h('p', { class: 'vw-hint' }, t('life.noEvents')));
+    }
+  }
+  return out;
+}
+
+// Map of a sphere (Grok and Codex, round 2): me in a fixed left column, sides as rows on the right, separate
+// in and out arrows of fixed width with the number of events; at most 5 sides, the rest stays in the list
+function sphereMap(list) {
+  const sides = [...new Set(list.map((x) => x.cp))].slice(0, 5);
+  if (!sides.length) return h('p', { class: 'vw-hint' }, t('life.noEvents'));
+  const H = Math.max(120, sides.length * 52 + 16), mid = H / 2;
+  const ns = 'http://www.w3.org/2000/svg';
+  const el = (tag, attrs, text) => { const n = document.createElementNS(ns, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); if (text != null) n.textContent = text; return n; };
+  const svg = el('svg', { viewBox: `0 0 360 ${H}`, width: '100%', role: 'img', 'aria-label': t('life.mapLabel') });
+  const defs = el('defs', {});
+  for (const [id, col] of [['vwa-in', 'var(--av-success)'], ['vwa-out', 'var(--av-accent)']]) {
+    const m = el('marker', { id, viewBox: '0 0 10 10', refX: '8', refY: '5', markerWidth: '6', markerHeight: '6', orient: 'auto-start-reverse' });
+    m.append(el('path', { d: 'M2 1L8 5L2 9', fill: 'none', stroke: col, 'stroke-width': '1.6' }));
+    defs.append(m);
+  }
+  svg.append(defs);
+  const me = el('g', {});
+  me.append(el('rect', { x: '4', y: String(mid - 22), width: '70', height: '44', rx: '8', class: 'vw-node-me' }), el('text', { x: '39', y: String(mid), 'text-anchor': 'middle', 'dominant-baseline': 'central', class: 'vw-node-t' }, t('me.subj')));
+  svg.append(me);
+  sides.forEach((cp, i) => {
+    const y = 8 + i * 52 + 22;
+    const inn = list.find((x) => x.cp === cp && x.dir === 'in'), out = list.find((x) => x.cp === cp && x.dir === 'out');
+    if (inn) {
+      svg.append(el('line', { x1: '226', y1: String(y - 6), x2: '78', y2: String(mid - 6), stroke: 'var(--av-success)', 'stroke-width': '1.6', 'marker-end': 'url(#vwa-in)' }));
+      svg.append(el('text', { x: '160', y: String((y - 6 + mid - 6) / 2 - 5), 'text-anchor': 'middle', class: 'vw-node-n' }, String(inn.evs.length)));
+    }
+    if (out) {
+      svg.append(el('line', { x1: '78', y1: String(mid + 6), x2: '226', y2: String(y + 6), stroke: 'var(--av-accent)', 'stroke-width': '1.6', 'marker-end': 'url(#vwa-out)' }));
+      svg.append(el('text', { x: '160', y: String((y + 6 + mid + 6) / 2 + 13), 'text-anchor': 'middle', class: 'vw-node-n' }, String(out.evs.length)));
+    }
+    const g = el('g', { class: 'vw-node', tabindex: '0', role: 'button' });
+    g.append(el('rect', { x: '230', y: String(y - 17), width: '126', height: '34', rx: '7' }), el('text', { x: '293', y: String(y), 'text-anchor': 'middle', 'dominant-baseline': 'central', class: 'vw-node-t' }, (cp ? nameOf(cp) : t('cp.unknown')).slice(0, 18)));
+    g.addEventListener('click', () => goLife({ t: 'p', cp }));
+    svg.append(g);
+  });
+  return h('div', { class: 'vw-map' }, svg, h('p', { class: 'vw-muted vw-small' }, t('life.mapHint')));
 }
 
 // ---- timeline ----
@@ -1373,16 +1604,19 @@ function systemDialog(s) {
     const W = h('input', { type: 'number', step: 'any', min: 0, value: b.W });
     const status = select(['active', 'dropped'].map((k) => [k, t('gs.' + k)]), b.status);
     const note = h('textarea', { rows: 2, maxlength: 2000 }, b.note || '');
+    const groups = [...new Set(systems().map(groupOf))];
+    const group = h('input', { type: 'text', maxlength: 100, list: 'vw-groups', value: b.group || (s ? groupOf(s) : ''), placeholder: t('life.groupPh') });
     const msg = h('p', { class: 'vw-error', role: 'alert' });
     return h('form', { onsubmit: async (e) => {
       e.preventDefault();
       if (!title.value.trim()) { msg.textContent = t('sys.needTitle'); return; }
       if (!(Number(W.value) > 0)) { msg.textContent = t('sys.needW'); return; }
       const body = { ...(s ? s.body : {}), title: title.value.trim(), W: Number(W.value), status: status.value };
+      if (group.value.trim()) body.group = group.value.trim().slice(0, 100); else delete body.group;
       if (note.value.trim()) body.note = note.value.trim(); else delete body.note;
       await guard(() => (s ? wallet.correct(s.rootId, body) : wallet.add('value-system', body)));
       close(true); render();
-    } }, field(t('sys.title'), title), field(t('sys.W'), W, t('sys.WHint')), field(t('goal.status'), status), field(t('cp.note'), note), msg, submitRow());
+    } }, h('datalist', { id: 'vw-groups' }, groups.map((g) => h('option', { value: g }))), field(t('sys.title'), title), field(t('life.group'), group, t('life.groupHint')), field(t('sys.W'), W, t('sys.WHint')), field(t('goal.status'), status), field(t('cp.note'), note), msg, submitRow());
   });
 }
 

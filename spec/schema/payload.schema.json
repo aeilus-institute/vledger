@@ -423,6 +423,10 @@
           "type": "string",
           "maxLength": 60
         },
+        "group": {
+          "type": "string",
+          "maxLength": 100
+        },
         "note": {
           "$ref": "common.schema.json#/$defs/text"
         }
