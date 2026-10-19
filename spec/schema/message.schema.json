@@ -400,7 +400,6 @@
           "type": "object",
           "required": [
             "kind",
-            "streamId",
             "code",
             "subscriber",
             "proof"

@@ -1,9 +1,9 @@
 // Value Wallet service worker: caches the app shell for offline use. Never sees wallet data
 // (the wallet lives in IndexedDB and is never fetched).
-const CACHE = 'vledger-app-19';
+const CACHE = 'vledger-app-20';
 const FILES = [
   './', 'index.html', 'manifest.webmanifest', 'icon.svg',
-  'assets/boot.js', 'assets/vledger-ui.js', 'assets/vledger-store.js', 'assets/vledger-crypto.js', 'assets/vledger-value.js', 'assets/vledger-qr.js', 'assets/vledger-providers.js', 'assets/vledger-biometric.js', 'assets/vledger-bridge.js',
+  'assets/boot.js', 'assets/vledger-ui.js', 'assets/vledger-store.js', 'assets/vledger-crypto.js', 'assets/vledger-value.js', 'assets/vledger-qr.js', 'assets/vledger-providers.js', 'assets/vledger-biometric.js', 'assets/vledger-bridge.js', 'assets/vledger-streams.js',
   'assets/vledger.css', 'assets/locales/en.json', 'assets/locales/ru.json',
 ];
 

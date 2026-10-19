@@ -170,7 +170,7 @@ details input[type="number"] { width: 96px; }
 .vw-alert p { margin: 6px 0 10px; }
 .vw-vet-dialog { width: min(1100px, calc(100vw - 16px)); }
 .vw-vet-frame { width: 100%; height: min(78vh, 760px); border: 1px solid var(--av-line); border-radius: 4px; background: #fff; }
-.vw-notice { border-color: var(--av-accent, #176B68); }
+.vw-notice { border-color: var(--av-accent); }
 .vw-reacts { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
 .vw-react { font: inherit; font-size: 0.9rem; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--av-line); background: var(--av-surface); color: inherit; cursor: pointer; }
 .vw-react:hover { border-color: var(--av-accent); }
@@ -219,3 +219,14 @@ details input[type="number"] { width: 96px; }
 .vw-fchip { font: inherit; font-size: 0.85rem; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--av-line); background: var(--av-surface); color: inherit; cursor: pointer; }
 .vw-fchip.is-on { border-color: var(--av-accent); color: var(--av-accent); background: var(--av-soft); }
 .vw-fchip.vw-ghost { border-style: dashed; color: var(--av-muted); }
+
+/* event streams (SPEC 20) */
+.vw-dl { display: grid; grid-template-columns: minmax(7em, max-content) 1fr; gap: 4px 12px; margin: 8px 0; }
+.vw-dl dt { color: var(--av-muted); }
+.vw-dl dd { margin: 0; overflow-wrap: anywhere; }
+.vw-fp { font: 600 28px/1.2 ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing: 0.12em; margin: 8px 0; }
+.vw-note { border-left: 3px solid var(--av-accent); padding-left: 10px; }
+.vw-ask { border: 1px dashed var(--av-line); border-radius: var(--av-radius); padding: 8px 10px; margin: 8px 0; }
+.vw-sugg { border-top: 1px solid var(--av-line); padding-top: 8px; margin-top: 8px; }
+.vw-pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace; background: var(--av-soft); padding: 8px; border-radius: var(--av-radius); max-height: 40vh; overflow: auto; }
+.vw-pre:empty { display: none; }

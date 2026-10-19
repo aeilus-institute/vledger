@@ -14,9 +14,10 @@ unless the holder exports a file or prepares a message.
 | `index.html`, `assets/boot.js` | Shell with a strict CSP, service worker on https |
 | `assets/vledger-crypto.js`, `assets/vledger-value.js` | The spec reference modules, byte-identical to `../spec/reference/` (checked by the self-test) |
 | `assets/vledger-store.js` | Wallet model: create, unlock, records with corrections and erasure, settings, export / merge, passphrase change, cards, messages (share, receive with request blocking), device suggestions |
+| `assets/vledger-streams.js` | Event streams (SPEC 20): links, signed descriptors, per-device subscription keys, pairing, pull and push intake, rules, pause and leave, feedback |
 | `assets/vledger-qr.js` | Own QR encoder (byte mode, level M, versions 1-10), cross-checked against `segno` |
 | `assets/vledger-ui.js`, `assets/vledger.css` | UI: Timeline, Contacts, Systems and goals (with facts), Analytics, Inbox, Settings |
-| `assets/locales/en.json`, `ru.json` | English and Russian, by hand |
+| `assets/locales/en.json`, `ru.json` | English and Russian (by hand; stream strings through the institute translation relay) |
 | `tests/selftest.html` | 27 automatic checks: TZ v0.3 AT-1...AT-13, QR against segno, spec fixtures |
 | `tests/make_qr_vectors.py` | Writes `qr-vectors.json` with `segno` (independent QR library) |
 
@@ -101,6 +102,41 @@ the standard; the cross-check test turns on `segnoQuirk` to compare module by mo
   the DOM helper; credentials sent cross-site; sync wrote a settings version every time (now local metadata).
 - Not done: the ÆVRI provider server itself (PHP on the Bitrix site; there is no PHP on this workstation, so it is
   written and tested at deployment with the owner's yes); a live GitHub test (needs the owner's token).
+
+## Event streams (SPEC 20, d9)
+
+More -> Streams. A stream only suggests; nothing goes back to a provider unless the holder sends it.
+
+- **Connect**: paste or scan `#stream=<descriptor URL or vw1:address>&code=...&relay=...` (also from the contact
+  scanner and from an opened link; the code is removed from the address bar at once and kept only in memory). The
+  wallet verifies the signed descriptor (or takes the provider's card from the relay directory), shows title, provider
+  (as it says), key fingerprint, kinds, how it finds the holder, policy, delivery and "nothing goes back
+  automatically"; Connect makes a subscription key pair for this stream on this device (IndexedDB `streamkeys`,
+  sealed with the data key, never in the wallet document) and shows 8 fingerprint characters to compare on the
+  provider's screen. By address only, the descriptor arrives with "subscribed" and nothing is taken in until "Keep".
+- **Intake**: pull (`/events?after=`, private requests signed by the subscription key) and relay push; signature
+  against the pinned key, recipient check, limits; one state per eventId: lower rev ignored, same rev with other
+  content set aside as suspicious, higher rev replaces a pending suggestion, a confirmed event only gets "the provider
+  corrected this", withdrawal removes a pending one, rejections are remembered. The cursor moves only after storing;
+  beyond 1000 pending the stream pauses and says so.
+- **Review**: grouped by stream, day and person; Confirm, Confirm and rate, Reject, group Confirm all / Reject all;
+  "Which of these is you?" for open streams, "Who is Anna?" maps people to contacts.
+- **Rules**: offered after a confirmation by hand; they only confirm, mark "by rule", count per day, undo in one tap.
+- **Pause, Leave, Forget**: Leave waits for the provider's signed "unsubscribed" receipt (retry), then removes the
+  device key; Forget at once. A newer descriptor that changes endpoint, relay, access or policy waits for approval.
+- **Feedback** (20.11): from an event ("Share with the stream") or "Tell the stream about an event": the stream's
+  policy first, sender forms most private first (anonymous: a key for one item; subscriber; named with the card),
+  publish limited by the policy, exactly what goes shown before Send; signed receipts, status, withdraw. Items and
+  their keys are kept in `message-out` records.
+- **Closed streams and verified people** (20.13): `access: "attested"` needs no code; "Confirm with ÆVRI" asks the
+  issuer the stream names (found by its key among known issuer APIs, same-origin session) for an attestation about
+  the subscription key, checked for issuer, claim, subject, audience and expiry before subscribing; kept in the
+  stream record, renewed only on the holder's tap. Feedback with `feedback.requires`: anyone / checked, not named /
+  named; a checked item carries an attestation about its own key, covered by the item signature.
+- `tests/streamtest.html`: 93 checks against the reference stream providers in `spec/tools/provider_server.py`
+  (`python spec/tools/provider_server.py 8796 --test`, freshly started; page `?port=` for another port): open stream
+  (`city`), private over https and relay (`brain`), relay only by address (`home`, like a provider at home), closed
+  (`dept`, with the reference issuer under `/v1/attest`).
 
 ## Not in L1 and L2
 

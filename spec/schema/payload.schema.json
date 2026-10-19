@@ -1569,6 +1569,39 @@
         },
         "addedAt": {
           "$ref": "common.schema.json#/$defs/time"
+        },
+        "subscriptions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "subscriptionId",
+              "address"
+            ],
+            "properties": {
+              "subscriptionId": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "address": {
+                "$ref": "common.schema.json#/$defs/address"
+              },
+              "addedAt": {
+                "$ref": "common.schema.json#/$defs/time"
+              }
+            }
+          }
+        },
+        "left": {
+          "type": "object",
+          "properties": {
+            "at": {
+              "$ref": "common.schema.json#/$defs/time"
+            },
+            "receipt": {
+              "type": "object"
+            }
+          }
         }
       }
     }

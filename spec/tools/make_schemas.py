@@ -280,7 +280,11 @@ defs['stream'] = {'type': 'object', 'required': ['providerAddress', 'streamId', 
         'id': ID, 'match': {'type': 'object', 'properties': {'kind': {'type': 'string'}, 'participantRef': REF, 'actorRef': REF}}, 'createdAt': c('time')}}},
     'handled': {'type': 'array', 'items': {'type': 'object', 'required': ['eventId', 'rev', 'state'], 'properties': {
         'eventId': {'type': 'string', 'maxLength': 100}, 'rev': {'type': 'integer', 'minimum': 1}, 'state': {'enum': ['confirmed', 'rejected', 'withdrawn']}}}},
-    'paused': {'type': 'boolean'}, 'leaving': {'type': 'boolean'}, 'addedAt': c('time')}}
+    'paused': {'type': 'boolean'}, 'leaving': {'type': 'boolean'}, 'addedAt': c('time'),
+    # one subscription per device of the holder (20.4); the keys stay on each device
+    'subscriptions': {'type': 'array', 'items': {'type': 'object', 'required': ['subscriptionId', 'address'], 'properties': {
+        'subscriptionId': {'type': 'string', 'maxLength': 100}, 'address': c('address'), 'addedAt': c('time')}}},
+    'left': {'type': 'object', 'properties': {'at': c('time'), 'receipt': {'type': 'object'}}}}}
 KIND_DEF['stream'] = 'stream'
 payload['properties']['kind'] = {'enum': list(KIND_DEF)}
 payload['properties']['source']['enum'].append('stream')
@@ -288,7 +292,8 @@ payload['else'] = {'allOf': [{'if': {'properties': {'kind': {'const': k}}}, 'the
 STREAM_KINDS = ['subscribe', 'subscribed', 'unsubscribe', 'unsubscribed', 'stream-events', 'replay']
 defs['messageOut']['properties']['kind']['enum'] += STREAM_KINDS
 body['oneOf'] += [
-    {'type': 'object', 'required': ['kind', 'streamId', 'code', 'subscriber', 'proof'], 'properties': {
+    # streamId is left out when the link named only the provider's address (20.3): the code says which stream
+    {'type': 'object', 'required': ['kind', 'code', 'subscriber', 'proof'], 'properties': {
         'kind': {'const': 'subscribe'}, 'streamId': ID, 'code': {'type': 'string', 'minLength': 22, 'maxLength': 100},
         'subscriber': {'$ref': 'stream.schema.json#/$defs/subscriber'}, 'proof': c('b64u')}},
     {'type': 'object', 'required': ['kind', 'streamId', 'subscriptionId'], 'properties': {

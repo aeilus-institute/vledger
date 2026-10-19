@@ -6,6 +6,7 @@ import * as C from './vledger-crypto.js';
 // One-click reactions, the scale readers use on the institute site (SPEC 17)
 export const REACTIONS = [-100, -20, 0, 20, 100, 500];
 import { makeProvider, RelayClient, ArbiterClient } from './vledger-providers.js';
+import { applyReceipt } from './vledger-streams.js';
 
 export const MIN_PASSPHRASE = 14;
 
@@ -20,11 +21,12 @@ const DB = 'aevri-vledger';
 
 function idb() {
   return new Promise((resolve, reject) => {
-    const r = indexedDB.open(DB, 3);
+    const r = indexedDB.open(DB, 4);
     r.onupgradeneeded = () => {
       if (!r.result.objectStoreNames.contains('wallets')) r.result.createObjectStore('wallets');
       if (!r.result.objectStoreNames.contains('recovery')) r.result.createObjectStore('recovery');
       if (!r.result.objectStoreNames.contains('biometric')) r.result.createObjectStore('biometric');
+      if (!r.result.objectStoreNames.contains('streamkeys')) r.result.createObjectStore('streamkeys');
     };
     r.onsuccess = () => resolve(r.result);
     r.onerror = () => reject(r.error);
@@ -63,6 +65,14 @@ export const biometricKeys = {
   get: (walletId) => tx('readonly', (s) => s.get(walletId), 'biometric'),
   put: (rec) => tx('readwrite', (s) => s.put(rec, rec.walletId), 'biometric'),
   remove: (walletId) => tx('readwrite', (s) => s.delete(walletId), 'biometric'),
+};
+
+// Subscription keys of event streams (SPEC 20.4): {key: walletId|address, address, encKey, wrap}, sealed with the data
+// key, kept on this device only and never in the wallet document.
+export const streamKeys = {
+  get: (key) => tx('readonly', (s) => s.get(key), 'streamkeys'),
+  put: (rec) => tx('readwrite', (s) => s.put(rec, rec.key), 'streamkeys'),
+  remove: (key) => tx('readwrite', (s) => s.delete(key), 'streamkeys'),
 };
 
 // ---- wallet ----
@@ -379,6 +389,8 @@ export class Wallet {
   // Receive one message. Blocked requests are dropped without a trace (returns {dropped: true}).
   async receive(msg) {
     const { body, from, verified } = await C.openMessage(this.session, msg);
+    // a receipt for feedback sent to a stream under the holder's name (SPEC 20.11) updates that item
+    if (body.kind === 'feedback-receipt') return { receipt: await applyReceipt(this, body, body.providerAddress) };
     if (body.kind === 'request' && C.requestBlocked(this.settings(), body, from, this.list('contact'), this.list('value-system'))) {
       return { dropped: true };
     }
@@ -436,7 +448,7 @@ export class Wallet {
     for (const m of msgs) {
       try {
         const r = await this.receive(m);
-        if (r.dropped) dropped++; else received++;
+        if (r.dropped) dropped++; else if (!('receipt' in r)) received++;
         if (r.matched) matched++;
       } catch { /* not for this wallet or damaged: skip */ }
     }

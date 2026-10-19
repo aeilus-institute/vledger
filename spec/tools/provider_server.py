@@ -8,6 +8,14 @@
   the DEK wrapped to the requesting device's key after the procedure (identity approved and delay over).
 - With --test: GET /debug/dump (everything stored, for leak checks) and POST /debug/approve/<requestId> (stands for
   the identity check), plus a minimal mock of the GitHub contents API under /gh/ (bearer token "test-token").
+- Event streams (SPEC 20): three reference stream providers under /v1/streams/<name>:
+  `city` (open, https, the holder finds themself), `brain` (private, https and relay, identifies the subscriber),
+  `home` (private, relay only, reached by its address and the card directory, like a provider at home).
+  With --test, /v1/debug/streams/<action>/<name> stands for the provider owner's screen: pairing codes, the pairing
+  list with fingerprints, approval, emitting events, reading and moderating feedback.
+- Attestations (SPEC 20.13): a reference issuer under /v1/attest (key, challenge, POST) like the institute's, and a
+  closed stream `dept` (access "attested", requires member:test-unit; feedback requires account-verified). With
+  --test, POST /v1/debug/attest/signin {"on": bool} stands for being signed in at the issuer.
 Needs: cryptography.
 """
 import base64
@@ -130,6 +138,402 @@ def release(request_id, dek, client_epk):
     return {'epk': pub_jwk(eph), 'iv': b64u(iv), 'ct': b64u(AESGCM(key).encrypt(iv, dek, info.encode()))}
 
 
+# ---- event streams (SPEC 20): reference providers ----
+
+def b32fp(address):
+    return base64.b32encode(hashlib.sha256(address.encode()).digest()).decode().rstrip('=')
+
+
+def sha256_json(v):
+    return 'sha256:' + hashlib.sha256(canon(v).encode()).hexdigest()
+
+
+def msg_key(shared, mid, to):
+    return hkdf(shared, f'aevri.vledger/1|message|{mid}|{to}')
+
+
+def uuid7():
+    ms = int(time.time() * 1000)
+    b = bytearray(os.urandom(16))
+    b[0:6] = ms.to_bytes(6, 'big')
+    b[6] = (b[6] & 0x0f) | 0x70
+    b[8] = (b[8] & 0x3f) | 0x80
+    h = b.hex()
+    return f'{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:]}'
+
+
+def seal_message(to, enc_jwk, body, sender=None):
+    """SPEC 11: ECDH(ephemeral, recipient encKey) + HKDF + AES-GCM; `sender` = (address, Ed25519 key) signs."""
+    mid = uuid7()
+    eph = ec.generate_private_key(ec.SECP256R1())
+    key = msg_key(eph.exchange(ec.ECDH(), ec_pub(enc_jwk)), mid, to)
+    iv = os.urandom(12)
+    info = f'aevri.vledger/1|message|{mid}|{to}'.encode()
+    msg = {'type': 'aevri.vledger.message', 'version': 1, 'id': mid, 'to': to, 'sentAt': iso(now()), 'epk': pub_jwk(eph),
+           'iv': b64u(iv), 'ct': b64u(AESGCM(key).encrypt(iv, canon(body).encode(), info))}
+    if sender:
+        msg['from'] = sender[0]
+        msg['sig'] = b64u(sender[1].sign(canon(msg).encode()))
+    return msg
+
+
+def open_message(priv, address, msg):
+    """Returns (body, from or None, verified). Raises on anything not for `address`."""
+    if msg.get('to') != address:
+        raise ValueError('not for us')
+    key = msg_key(priv.exchange(ec.ECDH(), ec_pub(msg['epk'])), msg['id'], msg['to'])
+    info = f"aevri.vledger/1|message|{msg['id']}|{msg['to']}".encode()
+    body = json.loads(AESGCM(key).decrypt(ub64(msg['iv']), ub64(msg['ct']), info))
+    frm, ok = msg.get('from'), False
+    if frm and msg.get('sig'):
+        rest = {k: v for k, v in msg.items() if k != 'sig'}
+        ok = ed_ok(frm[4:], canon(rest).encode(), msg['sig'])
+    return body, frm, ok
+
+
+def relay_send(msg):
+    with LOCK:
+        inboxes.setdefault(msg['to'], []).append((time.time(), msg))
+
+
+def relay_take(addr):
+    with LOCK:
+        return [m for ts, m in inboxes.pop(addr, []) if ts > time.time() - RELAY_DAYS * 86400]
+
+
+ISS_KEY = Ed25519PrivateKey.generate()
+ISS_ADDR = 'vw1:' + b64u(ISS_KEY.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw))
+ISS_CLAIMS = {'account-verified': 'A signed-in account with a confirmed e-mail address (reference issuer).',
+              'member:test-unit': 'A member of the test unit (reference issuer).'}
+iss_state = {'signed_in': True, 'challenges': {}}
+
+
+def iss_info():
+    doc = {'type': 'aevri.vledger.issuer', 'version': 1, 'issuer': ISS_ADDR, 'issuerName': 'Reference issuer', 'claims': ISS_CLAIMS,
+           'lifetimeDays': 30, 'audience': 'required', 'revocation': 'none in the pilot'}
+    return {'issuerInfo': doc, 'sig': b64u(ISS_KEY.sign(canon(doc).encode()))}
+
+
+def att_ok(doc, requires, subject, provider, stream_id):
+    """SPEC 20.13: issuer signature, issuer and claim as required, type, version, validity, audience, subject."""
+    a = (doc or {}).get('attestation') or {}
+    if a.get('type') != 'aevri.vledger.attestation' or a.get('version') != 1:
+        return False
+    if a.get('issuer') != requires['issuer'] or a.get('claim') != requires['claim'] or a.get('subject') != subject:
+        return False
+    if a.get('audience') != {'providerAddress': provider, 'streamId': stream_id}:
+        return False
+    if not (a.get('issuedAt', '9') <= iso(now() + timedelta(minutes=5)) and a.get('expiresAt', '') > iso(now())):
+        return False
+    return ed_ok(a['issuer'][4:], canon(a).encode(), doc.get('sig', ''))
+
+
+class Stream:
+    """One reference stream provider. Keeps events, subscriptions and feedback in memory."""
+
+    def __init__(self, name, title, access, transport, identifies, audience, feedback, kind='device', requires=None):
+        self.name, self.key, self.ec = name, Ed25519PrivateKey.generate(), ec.generate_private_key(ec.SECP256R1())
+        self.address = 'vw1:' + b64u(self.key.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw))
+        self.stream_id = uuid7()
+        self.rev = 1
+        self.title, self.access, self.transport, self.identifies, self.audience, self.fb, self.kind = title, access, transport, identifies, audience, feedback, kind
+        self.events = []         # [(seq, recipient or None, signed event)]
+        self.seq = 0
+        self.codes = {}          # code -> expiry (one-time)
+        self.pairings = {}       # request hash -> {subscriber, status, subscriptionId, fp, via}
+        self.subs = {}           # subscriptionId -> {address, encKey, active}
+        self.items = {}          # (key, feedbackId) -> {item, status, statusRev, hash}
+        self.extra = {}          # descriptor fields changed by tests
+        self.requires = requires
+        self.att_challenges = {}  # one-time subscribe challenges handed out for attested streams
+
+    @property
+    def base(self):
+        return f'http://127.0.0.1:{PORT}/v1/streams/{self.name}'
+
+    def descriptor(self):
+        s = {'type': 'aevri.vledger.stream', 'version': 1, 'descriptorRev': self.rev, 'streamId': self.stream_id, 'title': self.title,
+             'provider': {'name': 'Reference ' + self.name, 'kind': self.kind, 'address': self.address, 'encKey': pub_jwk(self.ec)},
+             'access': self.access, 'transport': self.transport, 'identifies': self.identifies, 'audience': self.audience,
+             'eventKinds': ['meeting', 'call', 'visit', 'publication', 'other'],
+             'policy': {'keeps': f'events of the {self.name} test stream, in memory of the reference server', 'retentionDays': 1,
+                        'deletesOnLeave': True, 'rawStays': True},
+             'updatedAt': '2026-10-19T09:00:00Z'}
+        if 'https' in self.transport:
+            s['endpoint'] = self.base
+        if 'relay' in self.transport:
+            s['relay'] = f'http://127.0.0.1:{PORT}/v1/relay'
+        if self.fb:
+            s['feedback'] = self.fb
+        if self.requires:
+            s['requires'] = self.requires
+        s.update(self.extra)
+        return {'stream': s, 'sig': b64u(self.key.sign(canon(s).encode()))}
+
+    def card(self):
+        c = {'type': 'aevri.vledger.card', 'version': 1, 'address': self.address, 'kind': self.kind, 'name': 'Reference ' + self.name,
+             'encKey': pub_jwk(self.ec), 'storage': {'stores': True, 'purpose': 'Event stream', 'retentionDays': 1, 'publishes': (self.fb or {}).get('publishes', 'no')},
+             'updatedAt': '2026-10-19T09:00:00Z'}
+        return {'card': c, 'sig': b64u(self.key.sign(canon(c).encode()))}
+
+    def sign_event(self, e):
+        e = {k: v for k, v in e.items() if k != 'sig'}
+        e['sig'] = b64u(self.key.sign(canon(e).encode()))
+        return e
+
+    def me(self):
+        return (self.address, self.key)
+
+    # -- pairing (20.4) --
+    def subscribe_attested(self, body, via):
+        sub = body.get('subscriber') or {}
+        addr, ch, atts = sub.get('address', ''), body.get('challenge', ''), body.get('attestations') or []
+        if self.access != 'attested' or body.get('streamId') != self.stream_id or not re.fullmatch(r'vw1:[A-Za-z0-9_-]{43}', addr) or not atts:
+            return None
+        signed = {'purpose': 'aevri.vledger/1|subscribe-attested', 'providerAddress': self.address, 'streamId': self.stream_id,
+                  'challenge': ch, 'subscriber': sub, 'attestationHashes': [sha256_json(a) for a in atts]}
+        if not ed_ok(addr[4:], canon(signed).encode(), body.get('proof', '')):
+            return None
+        good = [a for a in atts if att_ok(a, self.requires, addr, self.address, self.stream_id)]
+        if not good:
+            return None
+        with LOCK:
+            if ch.startswith('t:'):   # wallet-made for relay-only streams: fresh and used once
+                if not (iso(now() - timedelta(minutes=5)) <= ch[2:22] <= iso(now() + timedelta(minutes=1))) or ch in self.att_challenges:
+                    return None
+                self.att_challenges[ch] = time.time() + 600
+            else:
+                exp = challenges.pop(ch, None)
+                if not exp or exp < time.time():
+                    return None
+            sid, s = self.sub_by_address(addr)
+            expires = good[0]['attestation']['expiresAt']
+            if sid:                            # renewal: the same key brings a fresh attestation
+                s['expiresAt'] = max(s.get('expiresAt', ''), expires)
+            else:
+                sid = 'sub-' + secrets.token_hex(8)
+                self.subs[sid] = {'address': addr, 'encKey': sub['encKey'], 'active': True, 'expiresAt': expires}
+        return {'kind': 'subscribed', 'streamId': self.stream_id, 'subscriptionId': sid, 'descriptor': self.descriptor()}
+
+    def subscribe(self, body, via):
+        sub = body.get('subscriber') or {}
+        addr, code = sub.get('address', ''), body.get('code', '')
+        if not re.fullmatch(r'vw1:[A-Za-z0-9_-]{43}', addr) or not isinstance(code, str):
+            return None
+        signed = {'purpose': 'aevri.vledger/1|subscribe', 'providerAddress': self.address, 'code': code, 'subscriber': sub}
+        if 'streamId' in body:
+            if body['streamId'] != self.stream_id:
+                return None
+            signed['streamId'] = body['streamId']
+        if not ed_ok(addr[4:], canon(signed).encode(), body.get('proof', '')):
+            return None
+        h = sha256_json(body)
+        with LOCK:
+            if h in self.pairings:                 # a repeated identical request returns the same answer
+                return self.pairings[h]
+            exp = self.codes.pop(code, None)       # one time, consumed atomically
+            if not exp or exp < time.time():
+                return None
+            p = {'subscriber': sub, 'status': 'pending', 'fp': b32fp(addr)[:8], 'via': via, 'hash': h}
+            self.pairings[h] = p
+        return p
+
+    def answer(self, p):
+        if p['status'] != 'approved':
+            return {'kind': 'pending'}
+        return {'kind': 'subscribed', 'streamId': self.stream_id, 'subscriptionId': p['subscriptionId'], 'descriptor': self.descriptor()}
+
+    def approve(self, fp8):
+        with LOCK:
+            for p in self.pairings.values():
+                if p['status'] == 'pending' and p['fp'] == fp8:
+                    p['status'] = 'approved'
+                    p['subscriptionId'] = 'sub-' + secrets.token_hex(8)
+                    self.subs[p['subscriptionId']] = {'address': p['subscriber']['address'], 'encKey': p['subscriber']['encKey'], 'active': True}
+                    break
+            else:
+                return None
+        if p['via'] == 'relay':
+            relay_send(seal_message(p['subscriber']['address'], p['subscriber']['encKey'], self.answer(p), self.me()))
+        return p
+
+    def sub_by_address(self, addr):
+        return next(((sid, s) for sid, s in self.subs.items() if s['address'] == addr and s['active']), (None, None))
+
+    def expired(self, s):
+        return bool(s and s.get('expiresAt') and s['expiresAt'] <= iso(now()))
+
+    def unsubscribe(self, sid):
+        s = self.subs.get(sid)
+        if not s:
+            return None
+        with LOCK:
+            s['active'] = False
+            self.events = [x for x in self.events if x[1] != s['address']]   # deletesOnLeave
+        r = {'kind': 'unsubscribed', 'streamId': self.stream_id, 'subscriptionId': sid, 'deleted': True, 'at': iso(now())}
+        r['sig'] = b64u(self.key.sign(canon(r).encode()))
+        return r
+
+    # -- events (20.5) --
+    def emit(self, specs, owner_ref='p-owner'):
+        out = []
+        for spec in specs:
+            base = {'type': 'aevri.vledger.stream-event', 'version': 1, 'streamId': self.stream_id, 'rev': 1, 'occurredAt': iso(now()), 'kind': 'other'}
+            base.update({k: v for k, v in spec.items() if k != 'raw'})
+            targets = [None] if self.access == 'open' else [s['address'] for s in self.subs.values() if s['active'] and not self.expired(s)]
+            for rcp in targets:
+                e = json.loads(json.dumps(base))
+                if rcp:
+                    e['recipient'] = rcp
+                    for p in e.get('participants', []):
+                        if self.identifies == 'provider' and p.get('ref') == owner_ref:
+                            p['you'] = True
+                e = spec['raw'] if spec.get('raw') else self.sign_event(e)
+                with LOCK:
+                    self.seq += 1
+                    self.events.append((self.seq, rcp, e))
+                out.append(e)
+                if rcp and 'relay' in self.transport:
+                    sid, s = self.sub_by_address(rcp)
+                    relay_send(seal_message(rcp, s['encKey'], {'kind': 'stream-events', 'events': [e]}, self.me()))
+        return out
+
+    def page(self, rcp, after):
+        with LOCK:
+            items = [(n, e) for n, r, e in self.events if n > after and r == rcp][:100]
+        return items, str(items[-1][0] if items else after)
+
+    # -- feedback (20.11) --
+    def receipt(self, it):
+        r = {'kind': 'feedback-receipt', 'providerAddress': self.address, 'streamId': self.stream_id, 'feedbackId': it['item']['feedbackId'],
+             'itemHash': it['hash'], 'statusRev': it['statusRev'], 'status': it['status']}
+        if it.get('reason'):
+            r['reason'] = it['reason']
+        r['sig'] = b64u(self.key.sign(canon(r).encode()))
+        item = it['item']
+        return seal_message(item['key'], item['replyEncKey'], r, self.me())
+
+    def feedback(self, body):
+        """Handles stream-feedback, feedback-status and feedback-withdraw. Returns the reply message or None."""
+        kind = body.get('kind')
+        if kind in ('feedback-status', 'feedback-withdraw'):
+            with LOCK:
+                it = next((v for (k, f), v in self.items.items() if f == body.get('feedbackId')), None)
+            if not it:
+                return None
+            rest = {k: v for k, v in body.items() if k != 'sig'}
+            if not ed_ok(it['item']['key'][4:], canon(rest).encode(), body.get('sig', '')) or body.get('providerAddress') != self.address:
+                return None
+            if kind == 'feedback-withdraw' and it['status'] != 'withdrawn':
+                with LOCK:
+                    it['status'], it['statusRev'] = 'withdrawn', it['statusRev'] + 1
+                    it['item'] = {k: it['item'][k] for k in ('feedbackId', 'key', 'replyEncKey')}   # a small tombstone
+            return self.receipt(it)
+        if kind != 'stream-feedback' or not self.fb:
+            return None
+        item = body
+        key = item.get('key', '')
+        rest = {k: v for k, v in item.items() if k != 'sig'}
+        if not re.fullmatch(r'vw1:[A-Za-z0-9_-]{43}', key) or not ed_ok(key[4:], canon(rest).encode(), item.get('sig', '')):
+            return None
+        if item.get('providerAddress') != self.address or item.get('streamId') != self.stream_id:
+            return None
+        dedup = (key, item.get('feedbackId'))
+        with LOCK:
+            if dedup in self.items:
+                return self.receipt(self.items[dedup])
+        reason = None
+        fb = self.fb
+        if item.get('type') not in fb['accepts'] or item.get('sender') not in fb['senders']:
+            reason = 'not accepted by this stream'
+        elif fb['publishes'] != 'sender-choice' and item.get('publish') != fb['publishes']:
+            reason = 'the publish choice does not match the stream policy'
+        elif (item.get('sender') == 'named') != ('card' in item):
+            reason = 'a card goes with named items only'
+        elif item.get('sender') == 'named' and (item['card'].get('card', {}).get('address') != key or not ed_ok(key[4:], canon(item['card']['card']).encode(), item['card'].get('sig', ''))):
+            reason = 'the card does not match the key'
+        elif item.get('sender') == 'subscriber' and not self.sub_by_address(key)[0]:
+            reason = 'not a subscriber'
+        elif fb.get('requires') and item.get('sender') != 'named' and not any(att_ok(a, fb['requires'], key, self.address, self.stream_id) for a in item.get('attestations') or []):
+            reason = 'no valid attestation for this stream'
+        elif item.get('type') in ('assessment', 'participation') and not any(e.get('eventId') == (item.get('about') or {}).get('eventId') for _, _, e in self.events):
+            reason = 'no such event in this stream'
+        status = 'rejected' if reason else ('pending' if fb['moderation'] == 'before' else 'published')
+        it = {'item': item, 'status': status, 'statusRev': 1, 'hash': sha256_json(item), **({'reason': reason} if reason else {})}
+        with LOCK:
+            self.items[dedup] = it
+        return self.receipt(it)
+
+    def moderate(self, feedback_id, status):
+        with LOCK:
+            it = next((v for (k, f), v in self.items.items() if f == feedback_id), None)
+            if not it or it['status'] == 'withdrawn':
+                return None
+            it['status'], it['statusRev'] = status, it['statusRev'] + 1
+        if 'relay' in self.transport:
+            relay_send(self.receipt(it))   # over https only, the sender asks for a later status
+        return it
+
+    # -- the provider's own relay inbox --
+    def poll_relay(self):
+        for m in relay_take(self.address):
+            try:
+                body, frm, ok = open_message(self.ec, self.address, m)
+            except Exception:
+                continue
+            kind = body.get('kind')
+            if kind == 'subscribe' and ok and frm == (body.get('subscriber') or {}).get('address') and 'attestations' in body:
+                ans = self.subscribe_attested(body, 'relay')
+                if ans:
+                    relay_send(seal_message(frm, body['subscriber']['encKey'], ans, self.me()))
+            elif kind == 'subscribe' and ok and frm == (body.get('subscriber') or {}).get('address'):
+                p = self.subscribe(body, 'relay')
+                if p and p['status'] == 'approved':
+                    relay_send(seal_message(frm, p['subscriber']['encKey'], self.answer(p), self.me()))
+            elif kind in ('unsubscribe', 'replay') and ok:
+                sid, s = self.sub_by_address(frm)
+                if not sid or (body.get('subscriptionId') not in (None, sid)) or body.get('streamId') != self.stream_id:
+                    continue
+                if kind == 'unsubscribe':
+                    relay_send(seal_message(frm, s['encKey'], self.unsubscribe(sid), self.me()))
+                else:
+                    items, _ = self.page(frm, 0)
+                    since = body.get('since') or ''
+                    evs = [e for _, e in items if str(e.get('occurredAt', '')) >= since][:100]
+                    if evs:
+                        relay_send(seal_message(frm, s['encKey'], {'kind': 'stream-events', 'events': evs}, self.me()))
+            elif kind in ('stream-feedback', 'feedback-status', 'feedback-withdraw'):
+                r = self.feedback(body)
+                if r:
+                    relay_send(r)
+
+
+FB_ALL = ['assessment', 'participation', 'event']
+STREAMS = {
+    'city': Stream('city', 'Kolossi road works (reference)', 'open', ['https'], 'holder', 'public',
+                   {'accepts': FB_ALL, 'senders': ['anonymous', 'named'], 'moderation': 'before', 'publishes': 'sender-choice', 'retentionDays': 30}, kind='state'),
+    'brain': Stream('brain', 'Meetings and calls (reference second brain)', 'code', ['https', 'relay'], 'provider', 'participants',
+                    {'accepts': ['assessment', 'participation'], 'senders': ['anonymous', 'subscriber', 'named'], 'moderation': 'none', 'publishes': 'no', 'retentionDays': 30}),
+    'home': Stream('home', 'Home device (reference, relay only)', 'code', ['relay'], 'provider', 'participants',
+                   {'accepts': ['assessment', 'participation'], 'senders': ['anonymous', 'subscriber'], 'moderation': 'after', 'publishes': 'no', 'retentionDays': 30}),
+}
+STREAMS['dept'] = Stream('dept', 'Test unit news (reference, closed)', 'attested', ['https', 'relay'], 'holder', 'selected-readers',
+                         {'accepts': FB_ALL, 'senders': ['anonymous', 'subscriber', 'named'], 'moderation': 'none', 'publishes': 'sender-choice',
+                          'retentionDays': 30, 'requires': {'issuer': ISS_ADDR, 'claim': 'account-verified'}},
+                         kind='organization', requires={'issuer': ISS_ADDR, 'claim': 'member:test-unit'})
+cards[STREAMS['home'].address] = STREAMS['home'].card()
+
+
+def relay_worker():
+    while True:
+        for st in STREAMS.values():
+            try:
+                st.poll_relay()
+            except Exception:  # keep serving
+                pass
+        time.sleep(0.2)
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = 'vledger-provider/1'
 
@@ -203,6 +607,20 @@ class Handler(BaseHTTPRequestHandler):
             return self.relay(method, parts[1:])
         if parts[0] == 'arbiter':
             return self.arbiter(method, parts[1:])
+        if parts[0] == 'attest':
+            return self.attest(method, parts[1:])
+        if TEST and parts == ['debug', 'attest', 'signin'] and method == 'POST':
+            iss_state['signed_in'] = bool(self.body().get('on'))
+            return self.send(200, {'signedIn': iss_state['signed_in']})
+        if TEST and parts[:3] == ['debug', 'streams', 'expire'] and len(parts) == 4 and parts[3] in STREAMS:
+            with LOCK:
+                for sub in STREAMS[parts[3]].subs.values():
+                    sub['expiresAt'] = '2000-01-01T00:00:00Z'
+            return self.send(200, {'expired': True})
+        if parts[0] == 'streams' and len(parts) >= 2 and parts[1] in STREAMS:
+            return self.stream(method, STREAMS[parts[1]], parts[2:], q)
+        if TEST and parts[:2] == ['debug', 'streams'] and len(parts) >= 4 and parts[3] in STREAMS:
+            return self.stream_debug(method, parts[2], STREAMS[parts[3]])
         if TEST and parts == ['registry', 'test'] and method == 'GET':
             return self.registry()
         if parts[:2] == ['recovery', 'requests']:
@@ -370,6 +788,130 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(204)
         return self.problem(404, 'not-found')
 
+    # ---- event streams (SPEC 20) ----
+    def stream_proof(self, st, method):
+        addr = self.headers.get('X-Vledger-Address', '')
+        ch = self.headers.get('X-Vledger-Challenge', '')
+        with LOCK:
+            exp = challenges.pop(ch, None)
+        sid, sub = st.sub_by_address(addr)
+        if not exp or exp < time.time() or not sid:
+            return None, None
+        if st.expired(sub):   # checked on every private fetch (20.13)
+            return 'expired', None
+        signed = {'purpose': 'aevri.vledger/1|stream-request', 'challenge': ch, 'method': method, 'pathAndQuery': self.path,
+                  'streamId': st.stream_id, 'subscriptionId': sid}
+        return (sid, sub) if ed_ok(addr[4:], canon(signed).encode(), self.headers.get('X-Vledger-Proof', '')) else (None, None)
+
+    def stream(self, method, st, parts, q):
+        if parts == ['descriptor'] and method == 'GET':
+            return self.send(200, st.descriptor())
+        if 'https' not in st.transport:
+            return self.problem(404, 'not-found')
+        if parts == ['challenge'] and method == 'GET':
+            ch = secrets.token_urlsafe(24)
+            with LOCK:
+                challenges[ch] = time.time() + 300
+            return self.send(200, {'challenge': ch})
+        if parts == ['subscriptions'] and method == 'POST' and st.access == 'attested':
+            ans = st.subscribe_attested(self.body(), 'https')
+            return self.send(200, ans) if ans else self.problem(403, 'attestation')
+        if parts == ['subscriptions'] and method == 'POST' and st.access == 'code':
+            p = st.subscribe(self.body(), 'https')
+            if not p:
+                return self.problem(403, 'code')
+            ans = st.answer(p)
+            return self.send(200 if ans['kind'] == 'subscribed' else 202, ans)
+        if len(parts) == 2 and parts[0] == 'subscriptions' and method == 'DELETE':
+            sid, _ = self.stream_proof(st, 'DELETE')
+            if not sid or sid != parts[1]:
+                return self.problem(403, 'proof')
+            return self.send(200, st.unsubscribe(sid))
+        if parts == ['events'] and method == 'GET':
+            after = int(q.get('after') or 0)
+            if st.access == 'open':
+                items, cur = st.page(None, after)
+                return self.send(200, {'events': [e for _, e in items], 'cursor': cur})
+            sid, sub = self.stream_proof(st, 'GET')
+            if sid == 'expired':
+                return self.problem(403, 'attestation-expired')
+            if not sid:
+                return self.problem(403, 'proof')
+            items, cur = st.page(sub['address'], after)
+            evs = [seal_message(sub['address'], sub['encKey'], {'kind': 'stream-events', 'events': [e for _, e in items]}, st.me())] if items else []
+            return self.send(200, {'events': evs, 'cursor': cur})
+        if parts == ['feedback'] and method == 'POST':
+            try:
+                body, _, _ = open_message(st.ec, st.address, self.body())
+            except Exception:
+                return self.problem(422, 'not-a-message')
+            r = st.feedback(body)
+            return self.send(200, r) if r else self.problem(422, 'refused')
+        return self.problem(404, 'not-found')
+
+    def attest(self, method, parts):
+        """Reference issuer (SPEC 20.13), like the institute's: key public, the rest needs a signed-in account."""
+        if parts == ['key'] and method == 'GET':
+            return self.send(200, iss_info())
+        if not iss_state['signed_in']:
+            return self.problem(401, 'sign-in')
+        if parts == ['challenge'] and method == 'GET':
+            c = secrets.token_urlsafe(24)
+            with LOCK:
+                iss_state['challenges'][c] = time.time() + 300
+            return self.send(200, {'challenge': c, 'expiresAt': iso(now() + timedelta(minutes=5))})
+        if parts == [] and method == 'POST':
+            b = self.body()
+            subject, claim, aud, ch = b.get('subject', ''), b.get('claim', ''), b.get('audience') or {}, b.get('challenge', '')
+            if claim not in ISS_CLAIMS:
+                return self.problem(400, 'claim')
+            if set(aud) != {'providerAddress', 'streamId'}:
+                return self.problem(400, 'audience')
+            with LOCK:
+                exp = iss_state['challenges'].pop(ch, None)
+            if not exp or exp < time.time():
+                return self.problem(403, 'challenge')
+            signed = {'purpose': 'aevri.vledger/1|attest', 'issuer': ISS_ADDR, 'subject': subject, 'claim': claim, 'audience': aud, 'challenge': ch}
+            if not re.fullmatch(r'vw1:[A-Za-z0-9_-]{43}', subject) or not ed_ok(subject[4:], canon(signed).encode(), b.get('proof', '')):
+                return self.problem(403, 'proof')
+            a = {'type': 'aevri.vledger.attestation', 'version': 1, 'issuer': ISS_ADDR, 'issuerName': 'Reference issuer', 'subject': subject,
+                 'claim': claim, 'audience': {'providerAddress': aud['providerAddress'], 'streamId': aud['streamId']},
+                 'issuedAt': iso(now()), 'expiresAt': iso(now() + timedelta(days=30))}
+            return self.send(201, {'attestation': a, 'sig': b64u(ISS_KEY.sign(canon(a).encode()))})
+        return self.problem(404, 'not-found')
+
+    def stream_debug(self, method, action, st):
+        """Stands for the provider owner's own screen (test mode only)."""
+        if action == 'code' and method == 'POST':
+            code = secrets.token_urlsafe(16)          # 128 random bits
+            with LOCK:
+                st.codes[code] = time.time() + 600
+            return self.send(200, {'code': code, 'descriptorUrl': st.base + '/descriptor', 'address': st.address, 'streamId': st.stream_id})
+        if action == 'pairings' and method == 'GET':
+            return self.send(200, [{'fingerprint8': p['fp'], 'status': p['status']} for p in st.pairings.values()])
+        if action == 'approve' and method == 'POST':
+            p = st.approve(self.body().get('fingerprint8', ''))
+            return self.send(200, {'subscriptionId': p['subscriptionId']}) if p else self.problem(404, 'no-pairing')
+        if action == 'emit' and method == 'POST':
+            b = self.body()
+            return self.send(200, {'events': st.emit(b.get('events', []), b.get('ownerRef', 'p-owner'))})
+        if action == 'feedback' and method == 'GET':
+            with LOCK:
+                return self.send(200, [dict(v, key=k[0]) for k, v in st.items.items()])
+        if action == 'moderate' and method == 'POST':
+            b = self.body()
+            it = st.moderate(b.get('feedbackId'), b.get('status', 'published'))
+            return self.send(200, {'status': it['status']}) if it else self.problem(404, 'no-item')
+        if action == 'descriptor' and method == 'POST':
+            b = self.body()
+            with LOCK:
+                st.rev += 1
+                st.extra.update(b)
+            return self.send(200, st.descriptor())
+        if action == 'subs' and method == 'GET':
+            return self.send(200, st.subs)
+        return self.problem(404, 'not-found')
+
     # ---- a signed registry of a test organisation (SPEC 12), test mode only ----
     def registry(self):
         url = f'http://127.0.0.1:{PORT}/v1/registry/test'
@@ -515,4 +1057,5 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == '__main__':
     print(f'vledger reference provider on http://127.0.0.1:{PORT}/v1 (delay {DELAY}s, test={TEST})', flush=True)
+    threading.Thread(target=relay_worker, daemon=True).start()
     ThreadingHTTPServer(('127.0.0.1', PORT), Handler).serve_forever()

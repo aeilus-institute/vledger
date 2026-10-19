@@ -466,10 +466,13 @@ Open streams need no subscription: the wallet only pulls. For `code` streams:
 - The wallet sends `{kind: "subscribe", streamId, code, subscriber: {address, encKey}, proof}`, where `address` is
   the `vw1:` form of the subscription key and `proof` is its signature over the JCS form of
   `{purpose: "aevri.vledger/1|subscribe", providerAddress, streamId, code, subscriber}`. Over `https`:
-  `POST {endpoint}/subscriptions`; over the relay: an encrypted message (section 11) to `provider.address`.
+  `POST {endpoint}/subscriptions`; over the relay: an encrypted message (section 11) to `provider.address`, signed by
+  the subscription key. When the link named only the provider address, the wallet does not know the stream yet:
+  `streamId` is left out of the request and of the proof, and the code says which stream it is.
 - The provider checks the code (at least 128 random bits, at most 10 minutes old, used once, consumed atomically),
   then shows the first 8 characters of the subscription key fingerprint on its own screen; the wallet shows the same
-  8 characters. The owner approves on the provider side if they match. The answer is
+  8 characters. A **fingerprint** of an address is base32 (RFC 4648, `A-Z2-7`, no padding) of SHA-256 of the
+  address text; the wallet shows the provider's fingerprint the same way. The owner approves on the provider side if they match. The answer is
   `{kind: "subscribed", streamId, subscriptionId, descriptor?}`; a repeated identical request returns the same answer.
 - The provider binds the subscription to what the pairing screen belongs to (its owner, a participant). It MUST NOT
   ask for, accept or store the holder's main wallet address, name, contacts or anything from the wallet.
@@ -477,7 +480,8 @@ Open streams need no subscription: the wallet only pulls. For `code` streams:
 - Subscription keys stay on the device where they were made, in encrypted device-local storage, outside the wallet
   document (like section 18): they are never synced or exported. Another device of the same holder connects to
   an open stream by itself and to a private stream with its own pairing. The stream record itself (20.8) is synced, so all devices know the stream and
-  which events were already handled.
+  which events were already handled; it lists each device's subscription (`subscriptions[]`: id and address, never
+  keys).
 
 ### 20.5. Events
 

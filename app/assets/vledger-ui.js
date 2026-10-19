@@ -2,7 +2,8 @@
 // Timeline of events "someone did something with something or someone", contacts with addresses and QR,
 // value systems and goals, assessments with references and spent value, inbox, analytics, settings.
 
-import { Wallet, device, passphraseOk, inspectImport, pendingRecovery, REACTIONS, biometricKeys } from './vledger-store.js';
+import { Wallet, device, passphraseOk, inspectImport, pendingRecovery, REACTIONS, biometricKeys, streamKeys } from './vledger-store.js';
+import * as S from './vledger-streams.js';
 import * as Bio from './vledger-biometric.js';
 import { makeProvider, restoreCode, parseRestoreCode, AEVRI_URL, AEVRI_RELAY, AEVRI_ARBITER, AEVRI_REGISTRY, fetchRegistry, RelayClient } from './vledger-providers.js';
 import * as V from './vledger-value.js';
@@ -14,8 +15,9 @@ const LANGS = ['en', 'ru'];
 let L = {};
 let lang = 'en';
 let wallet = null;
-// What the page was opened for (SPEC 3, 12): #vw1:... adds a contact; ?registry=<url>&item=<id> opens a work in a
-// registry. Kept until a wallet is open, then done once and removed from the address bar.
+// What the page was opened for (SPEC 3, 12, 20): #vw1:... adds a contact; ?registry=<url>&item=<id> opens a work in a
+// registry; #stream=... connects an event stream. Kept until a wallet is open, then done once and removed from the
+// address bar (a stream link at once, so that its pairing code stays only in memory).
 let pending = readLink();
 
 function readLink() {
@@ -23,6 +25,8 @@ function readLink() {
     const q = new URLSearchParams(location.search);
     const reg = q.get('registry');
     if (reg && /^(https:\/\/|http:\/\/(127\.0\.0\.1|localhost)[:/])/.test(reg)) return { kind: 'registry', url: reg, item: (q.get('item') || '').slice(0, 100) };
+    const st = S.parseStreamLink(location.hash);
+    if (st) { try { history.replaceState(null, '', location.pathname + location.search); } catch { /* ignore */ } return { kind: 'stream', link: st }; }
     const a = C.parseAddress(decodeURIComponent(location.hash.slice(1)));
     if (a) return { address: a.address, name: a.name, contactKind: a.kind, kind: 'contact' };
   } catch { /* ignore a malformed link */ }
@@ -56,6 +60,9 @@ async function runPending() {
     if (known) { toast(t('link.known', { name: known.body.name })); return; }
     const kind = ['person', 'organization', 'state', 'group', 'device'].includes(p.contactKind) ? p.contactKind : 'person';
     await contactDialog(null, { name: p.name || '', address: p.address, type: kind });
+  } else if (p.kind === 'stream') {
+    tab = 'streams'; render();
+    await connectDialog(p.link);
   } else if (p.kind === 'registry') {
     tab = 'timeline'; render();
     const doc = await guard(() => fetchRegistry(p.url));
@@ -171,6 +178,8 @@ function lockNow() {
   wallet = null;
   vss.reset();
   notices = [];
+  lastHandConfirm = null;
+  streamErr.clear();
   render();
 }
 
@@ -290,7 +299,9 @@ async function renderStart() {
     h('p', { class: 'vw-lead' }, t('start.lead')),
     h('ul', { class: 'vw-facts' }, h('li', {}, t('start.f1')), h('li', {}, t('start.f2')), h('li', {}, t('start.f3'))));
   if (pending) box.prepend(h('div', { class: 'vw-card vw-notice', role: 'status' }, pending.kind === 'contact'
-    ? t('link.contact', { name: pending.name || short(pending.address) }) : t('link.registry', { host: new URL(pending.url).host })));
+    ? t('link.contact', { name: pending.name || short(pending.address) })
+    : pending.kind === 'stream' ? t('link.stream', { from: pending.link.url ? new URL(pending.link.url).host : short(pending.link.address) })
+      : t('link.registry', { host: new URL(pending.url).host })));
   if (list.length) {
     box.append(h('h2', {}, t('start.onDevice')));
     for (const w of list) {
@@ -409,6 +420,7 @@ async function checkMessages(quiet = true) {
 async function syncAll(quiet = false) {
   if (!wallet || syncing) return;
   checkMessages(true);
+  refreshStreams(true);
   const list = wallet.providers();
   if (!list.length) return;
   syncing = true;
@@ -605,27 +617,27 @@ async function checkRecovery(rq) {
 
 // Main tabs (owner, 2026-10-18, after review with Grok Heavy and Codex): Log, Life, Review; the rest under More
 const TABS = ['timeline', 'life', 'review', 'more'];
-const MORE = ['contacts', 'systems', 'analytics', 'inbox', 'settings'];
+const MORE = ['streams', 'contacts', 'systems', 'analytics', 'inbox', 'settings'];
 
 function renderWallet() {
-  const inboxCount = events(true).filter((e) => e.body.status === 'suggested').length + wallet.list('message-in').filter((m) => m.body.state === 'new').length;
+  const moreCount = inboxCount() + streamPendingCount();
   const assessedIds = new Set(assessments().map((a) => a.body.eventId));
   const openCount = events().filter((e) => !assessedIds.has(e.rootId)).length;
   const current = MORE.includes(tab) ? 'more' : tab;
   const nav = h('nav', { class: 'vw-tabs', role: 'tablist' }, TABS.map((k) =>
     h('button', { role: 'tab', 'aria-selected': String(current === k), class: current === k ? 'is-on' : '', onclick: () => { tab = k; if (k === 'life') lifePath = []; render(); } },
       t('tab.' + k), k === 'review' && openCount ? h('span', { class: 'vw-badge' }, String(openCount)) : null,
-      k === 'more' && inboxCount ? h('span', { class: 'vw-badge' }, String(inboxCount)) : null)));
-  const views = { timeline: tabTimeline, life: tabLife, review: tabReview, more: tabMore, contacts: tabContacts, systems: tabSystems, analytics: tabAnalytics, inbox: tabInbox, settings: tabSettings };
+      k === 'more' && moreCount ? h('span', { class: 'vw-badge' }, String(moreCount)) : null)));
+  const views = { timeline: tabTimeline, life: tabLife, review: tabReview, more: tabMore, contacts: tabContacts, systems: tabSystems, analytics: tabAnalytics, inbox: tabInbox, settings: tabSettings, streams: tabStreams };
   const body = views[tab]();
   const back = MORE.includes(tab) ? h('button', { class: 'vw-path', onclick: () => { tab = 'more'; render(); } }, '‹ ' + t('tab.more')) : null;
   return h('div', {}, noticeBanner(), nav, h('section', { class: 'vw-panel', role: 'tabpanel' }, back, body));
 }
 
 function tabMore() {
-  const inboxCount = events(true).filter((e) => e.body.status === 'suggested').length + wallet.list('message-in').filter((m) => m.body.state === 'new').length;
-  return h('div', { class: 'vw-list' }, MORE.map((k) => h('button', { class: 'vw-lrow', onclick: () => { tab = k; render(); } },
-    h('span', { class: 'vw-lmain' }, t('tab.' + k)), k === 'inbox' && inboxCount ? h('span', { class: 'vw-badge' }, String(inboxCount)) : null, h('span', { class: 'vw-chev', 'aria-hidden': 'true' }, '›'))));
+  const counts = { inbox: inboxCount(), streams: streamPendingCount() };
+  return h('div', { class: 'vw-list' }, MORE.map((k) => h('button', { class: 'vw-lrow', onclick: () => { tab = k; render(); if (k === 'streams') refreshStreams(true); } },
+    h('span', { class: 'vw-lmain' }, t('tab.' + k)), counts[k] ? h('span', { class: 'vw-badge' }, String(counts[k])) : null, h('span', { class: 'vw-chev', 'aria-hidden': 'true' }, '›'))));
 }
 
 function tabReview() {
@@ -1021,10 +1033,12 @@ function eventCard(ev, as) {
     h('div', { class: 'vw-row' }, h('h3', {}, phrase(ev)),
       h('span', { class: 'vw-chips' }, h('span', { class: 'vw-chip' }, t('role.' + b.role)), b.systemId ? h('span', { class: 'vw-chip vw-chip-sys' }, sysTitle(b.systemId)) : null,
         b.registryRef ? h('span', { class: 'vw-chip' }, t('ev.fromReg')) : null,
+        b.streamRef ? h('span', { class: 'vw-chip' }, b.byRule ? t('st.byRule') : t('st.fromStream')) : null,
         b.receiptState ? h('span', { class: 'vw-chip' + (b.receiptState === 'matched' ? ' vw-chip-sys' : '') }, t('rc.state.' + b.receiptState) + ((b.stamps || []).length ? ' · ' + t('rc.stamped') : '')) : null)),
     // One click is a whole assessment (owner, 2026-10-17); details, goals and phases only when there is something
     item && ((item.plan?.promise && !plans.length) || item.url) ? h('p', { class: 'vw-muted vw-small' }, item.plan?.promise && !plans.length ? t('reg.promise', { p: item.plan.promise }) + ' ' : '',
       item.url ? h('a', { href: item.url, target: '_blank', rel: 'noopener' }, t('ev.openItem')) : null) : null,
+    b.streamInfo?.source?.url ? h('p', { class: 'vw-muted vw-small' }, linkButton(b.streamInfo.source.url, b.streamInfo.source.label || t('st.source'))) : null,
     reactionRow(ev.rootId, realized ? reactionOf(realized.body) : null),
     plans.length ? plans.map((p) => h('div', { class: 'vw-plan' }, `${t('phase.plan')}: ${p.body.author === selfId() ? t('plan.mine') : nameOf(p.body.author)}: ${p.body.promise}`,
       h('span', { class: 'vw-muted vw-small' }, ' · ' + t('plan.counted', { f: pct(V.planFactor(s, { contactId: p.body.author, systemId: b.systemId })) })))) : null,
@@ -1038,6 +1052,7 @@ function eventCard(ev, as) {
     h('div', { class: 'vw-actions' },
       h('button', { class: 'vw-btn vw-ghost', onclick: () => refineDialog(ev.rootId) }, t('rf.go')),
       latest && target ? h('button', { class: 'vw-btn', onclick: () => shareDialog(ev, latest, target) }, t('ev.share', { name: nameOf(target) })) : null,
+      streamOfEvent(ev)?.body.descriptor.stream.feedback?.accepts.some((x) => x !== 'event') ? h('button', { class: 'vw-btn vw-ghost', onclick: () => feedbackDialog(streamOfEvent(ev), ev) }, t('fb.share')) : null,
       !b.receiptState && receiptTarget(ev) ? h('button', { class: 'vw-btn', onclick: () => confirmDialog(ev, receiptTarget(ev)) }, t('rc.btn')) : null,
       b.receiptState === 'matched' && !(b.stamps || []).length ? h('button', { class: 'vw-btn vw-ghost', onclick: async () => {
         const st = await guard(() => wallet.stampAt(ev.rootId, (wallet.settings().arbiters || [])[0]?.url || AEVRI_ARBITER));
@@ -1812,6 +1827,14 @@ async function scanDialog() {
     toast(t('ct.noScanner'));
     return contactDialog();
   }
+  const found = await scanQr((raw) => { const st = S.parseStreamLink(raw); return st ? { stream: st } : C.parseAddress(raw); });
+  if (found?.stream) { tab = 'streams'; render(); return connectDialog(found.stream); }
+  if (found) contactDialog(null, { address: found.address, name: found.name || '', type: found.kind || 'person' });
+}
+
+// Reads one QR code with the camera; `parse` turns its text into a result or null
+async function scanQr(parse) {
+  if (!('BarcodeDetector' in window) || !navigator.mediaDevices?.getUserMedia) { toast(t('st.noScanner')); return null; }
   let stream = null, stop = false;
   const found = await modal(t('ct.scan'), (close) => {
     const video = h('video', { class: 'vw-video', playsinline: true, muted: true });
@@ -1823,7 +1846,7 @@ async function scanDialog() {
         const det = new window.BarcodeDetector({ formats: ['qr_code'] });
         while (!stop) {
           const codes = await det.detect(video).catch(() => []);
-          const p = codes.map((x) => C.parseAddress(x.rawValue)).find(Boolean);
+          const p = codes.map((x) => parse(x.rawValue)).find(Boolean);
           if (p) { close(p); break; }
           await new Promise((r) => setTimeout(r, 250));
         }
@@ -1833,7 +1856,7 @@ async function scanDialog() {
   });
   stop = true;
   if (stream) stream.getTracks().forEach((tr) => tr.stop());
-  if (found) contactDialog(null, { address: found.address, name: found.name || '', type: found.kind || 'person' });
+  return found;
 }
 
 // ---- systems, goals, facts ----
@@ -2020,13 +2043,15 @@ function reactionsSection(evs) {
 // ---- inbox ----
 
 function tabInbox() {
-  const sugg = events(true).filter((e) => e.body.status === 'suggested');
+  const sugg = events(true).filter((e) => e.body.status === 'suggested' && !e.body.streamRef);
+  const fromStreams = streamPendingCount();
   const msgs = wallet.list('message-in').sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const out = [h('div', { class: 'vw-toolbar' },
     wallet.relayUrl() ? h('button', { class: 'vw-btn vw-primary', onclick: () => checkMessages(false) }, t('rl.check')) : null,
     h('button', { class: 'vw-btn', onclick: async () => { const d = await pickFile(); if (d) await receiveMessage(d); } }, t('in.open')))];
   out.push(h('h2', {}, t('in.suggested')));
-  if (!sugg.length) out.push(h('p', { class: 'vw-muted' }, t('in.noSuggested')));
+  if (fromStreams) out.push(h('button', { class: 'vw-lrow', onclick: () => { tab = 'streams'; render(); } }, h('span', { class: 'vw-lmain' }, t('st.inboxLink', { n: fromStreams })), h('span', { class: 'vw-chev', 'aria-hidden': 'true' }, '›')));
+  if (!sugg.length && !fromStreams) out.push(h('p', { class: 'vw-muted' }, t('in.noSuggested')));
   for (const e of sugg) {
     out.push(h('article', { class: 'vw-card' },
       h('div', { class: 'vw-row' }, h('h3', {}, phrase(e)), h('span', { class: 'vw-chip' }, t('in.from', { name: nameOf(e.body.suggestedBy) }))),
@@ -2085,6 +2110,489 @@ async function answerRequest(m) {
   await wallet.setMessageState(m.rootId, 'accepted');
   render();
   assessDialog(evId, null, { phase: 'realized' });
+}
+
+// ---- event streams (SPEC 20): connect, review queue, rules, pause and leave, feedback ----
+
+let streamBusy = false;
+const streamErr = new Map(); // stream root id -> {n, until, msg}: back off on errors
+let lastHandConfirm = null;  // {rootId, kind, ref, label}: offer a rule after a confirmation by hand
+const streamRecs = () => S.streams(wallet);
+const streamPendingCount = () => streamRecs().reduce((n, r) => n + S.pendingOf(wallet, r).length, 0);
+const inboxCount = () => events(true).filter((e) => e.body.status === 'suggested' && !e.body.streamRef).length + wallet.list('message-in').filter((m) => m.body.state === 'new').length;
+const kindWord = (k) => (L['st.kind.' + k] ? t('st.kind.' + k) : k);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const streamOfEvent = (ev) => (ev.body.streamRef ? S.streamOf(wallet, ev.body.streamRef.provider, ev.body.streamRef.streamId) : null);
+
+async function refreshStreams(quiet = true) {
+  if (!wallet || streamBusy) return;
+  streamBusy = true;
+  let added = 0, errors = 0, changed = false;
+  try {
+    for (const r of streamRecs()) {
+      const e = streamErr.get(r.rootId);
+      if (quiet && e && e.until > Date.now()) continue;
+      try {
+        const x = await S.refresh(wallet, r.rootId, streamKeys);
+        streamErr.delete(r.rootId);
+        if (x) {
+          added += x.added - x.byRule;
+          if (x.added || x.updated || x.withdrawn || x.corrections || x.receipts || x.paused || x.other || x.suspicious) changed = true;
+        }
+      } catch (err) {
+        console.warn(err);
+        errors++;
+        const n = (e?.n || 0) + 1;
+        streamErr.set(r.rootId, { n, until: Date.now() + Math.min(3600, 30 * 2 ** n) * 1000, msg: err.message });
+      }
+    }
+  } finally { streamBusy = false; }
+  if (!quiet) toast(errors ? t('st.checkErrors', { n: errors }) : t('st.checked', { n: added }));
+  else if (added > 0) toast(t('st.newSuggestions', { n: added }));
+  if (changed || !quiet) render();
+}
+
+const streamErrText = (e) => {
+  const known = ['bad-signature', 'bad-descriptor', 'not-descriptor', 'too-large', 'no-card', 'no-code', 'other-stream', 'policy-conflict', 'publish-not-allowed', 'no-keys', 'no-assessment', 'no-event', 'not-accepted', 'sender-not-accepted',
+    'sign-in', 'unknown-issuer', 'email-not-confirmed', 'rate', 'needs-attestation', 'renew-refused', 'vledger/attestation-expired', 'vledger/attestation'];
+  if (String(e?.code || '').startsWith('attestation-')) return t('att.err.bad', { why: e.code.slice(12) });
+  if (known.includes(e?.code) && e.code.startsWith('vledger/')) return t('st.err.' + e.code.slice(8));
+  if (known.includes(e?.code)) return t('st.err.' + e.code);
+  if (e?.status === 403) return t('st.err.code');
+  return t('st.err.net', { msg: e?.message || String(e) });
+};
+
+// Attestations (SPEC 20.13): who checks what about the holder's key, in words
+const claimWord = (c) => {
+  const [k, v] = String(c).split(':');
+  return L['att.claim.' + k] ? t('att.claim.' + k, { v: v || '' }) : c;
+};
+const issuerNames = new Map();
+function issuerName(address, el) {
+  const fill1 = (n) => { if (el) el.textContent = n; return n; };
+  if (issuerNames.has(address)) return fill1(issuerNames.get(address));
+  S.findIssuer(address).then((x) => { const n = x ? x.info.issuerName : t('att.unknownIssuer', { fp: short(address) }); issuerNames.set(address, n); fill1(n); }).catch(() => {});
+  return fill1(short(address));
+}
+function requiresView(req, { lifetime = true, feedback = false } = {}) {
+  const who = h('strong', {});
+  issuerName(req.issuer, who);
+  return h('div', { class: 'vw-ask' }, h('p', {}, t(feedback ? 'att.needsFb' : 'att.needs'), ' ', who, feedback ? ', ' : ': ', claimWord(req.claim)),
+    lifetime ? h('p', { class: 'vw-hint' }, t('att.lifetime')) : null,
+    h('p', { class: 'vw-hint' }, t('att.pseudo')));
+}
+const signInHelp = (e) => (e?.code === 'sign-in' ? h('p', {}, linkButton('https://aeilus.institute/', t('att.signInLink'))) : null);
+
+// A link from a stream opens only on the holder's tap, showing where it goes, without referrer or opener (20.10)
+function linkButton(url, label) {
+  return h('button', { class: 'vw-link', type: 'button', onclick: () => { if (confirm(t('st.openLink', { url }))) window.open(url, '_blank', 'noopener,noreferrer'); } }, label);
+}
+
+function streamFacts(s, { origin, fingerprint, relay } = {}) {
+  const p = s.policy;
+  const fp = h('dd', {}, fingerprint ? S.fp8(fingerprint) : '');
+  if (!fingerprint) S.fingerprint(s.provider.address).then((f) => { fp.textContent = S.fp8(f); });
+  const rows = [
+    [t('st.provider'), t('st.claim', { name: s.provider.name })], [t('st.fingerprint'), fp],
+    origin ? [t('st.origin'), origin] : null,
+    [t('st.kinds'), (s.eventKinds || []).join(', ') || '-'],
+    [t('st.identifies'), t('st.identifies.' + s.identifies)],
+    [t('st.access'), t('st.access.' + s.access)],
+    s.requires ? [t('att.who'), (() => { const who = h('span', {}); issuerName(s.requires.issuer, who); return h('dd', {}, claimWord(s.requires.claim), ' · ', who); })()] : null,
+    [t('st.keeps'), p.keeps + (p.retentionDays != null ? ' · ' + t('st.days', { n: p.retentionDays }) : '')],
+    [t('st.onLeave'), t(p.deletesOnLeave ? 'st.deletesOnLeave' : 'st.keepsOnLeave')],
+    [t('st.raw'), t(p.rawStays ? 'st.rawStays' : 'st.rawMoves')],
+    [t('st.transport'), s.transport.map((x) => t('st.tr.' + x)).join(', ')],
+  ].filter(Boolean);
+  return h('div', {},
+    h('h3', {}, s.title),
+    h('dl', { class: 'vw-dl' }, rows.map(([k, v]) => [h('dt', {}, k), v instanceof Node ? v : h('dd', {}, v)])),
+    s.transport.includes('relay') ? h('p', { class: 'vw-hint' }, t('st.relayNote', { relay: relay || S.relayOf(s) })) : null,
+    p.url ? h('p', {}, linkButton(p.url, t('st.policyLink'))) : null,
+    s.feedback ? h('p', { class: 'vw-hint' }, t('st.fbNote', { accepts: s.feedback.accepts.map((x) => t('fb.type.' + x)).join(', ') })) : null,
+    s.access === 'attested' ? requiresView(s.requires) : null,
+    h('p', { class: 'vw-note' }, t('st.nothingBack')));
+}
+
+// Connect a stream (20.3): paste or scan a link, see what will happen, tap Connect, compare 8 characters
+function connectDialog(link = null) {
+  return modal(t('st.connect'), (close) => {
+    const box = h('div', {});
+    const msg = h('p', { class: 'vw-error', role: 'alert' });
+    let code = '';
+    const askLink = () => {
+      const ta = h('textarea', { rows: 3, placeholder: 'https://aeilus.institute/tools/vledger/#stream=...', autocomplete: 'off' });
+      fill(box, h('p', { class: 'vw-hint' }, t('st.connectLead')), field(t('st.paste'), ta), msg,
+        h('div', { class: 'vw-actions' },
+          h('button', { class: 'vw-btn vw-primary', type: 'button', onclick: () => { const l = S.parseStreamLink(ta.value); ta.value = ''; if (!l) { msg.textContent = t('st.badLink'); return; } begin(l); } }, t('st.next')),
+          h('button', { class: 'vw-btn', type: 'button', onclick: async () => { const l = await scanQr((raw) => S.parseStreamLink(raw)); if (l) begin(l); } }, t('st.scan'))));
+    };
+    const begin = async (l) => {
+      code = l.code || '';
+      msg.textContent = '';
+      fill(box, h('p', { class: 'vw-muted' }, t('st.checking')));
+      let info;
+      try { info = await S.inspectLink(l); } catch (e) { fill(box, h('p', { class: 'vw-error' }, streamErrText(e)), h('div', { class: 'vw-actions' }, h('button', { class: 'vw-btn', type: 'button', onclick: askLink }, t('st.tryAgain')))); return; }
+      const s = info.stream;
+      const known = s ? S.streamOf(wallet, s.provider.address, s.streamId) : null;
+      const needsCode = info.kind === 'card' || s.access === 'code';
+      const attested = s && s.access === 'attested';
+      const iss = attested ? await S.findIssuer(s.requires.issuer).catch(() => null) : null;
+      const codeIn = needsCode && !code ? h('input', { type: 'text', autocomplete: 'off', spellcheck: 'false' }) : null;
+      fill(box,
+        s ? streamFacts(s, { origin: info.origin, fingerprint: info.fingerprint, relay: info.relay })
+          : h('div', {}, h('h3', {}, info.card.card.name || t('st.unnamed')),
+            h('dl', { class: 'vw-dl' }, h('dt', {}, t('st.provider')), h('dd', {}, t('st.claim', { name: info.card.card.name || '-' })), h('dt', {}, t('st.fingerprint')), h('dd', {}, S.fp8(info.fingerprint))),
+            h('p', { class: 'vw-hint' }, t('st.relayNote', { relay: info.relay })), h('p', { class: 'vw-hint' }, t('st.detailsLater')), h('p', { class: 'vw-note' }, t('st.nothingBack'))),
+        known && !known.body.left ? h('p', { class: 'vw-hint' }, t(needsCode ? 'st.knownPair' : 'st.known')) : null,
+        attested && !iss ? h('p', { class: 'vw-error' }, t('st.err.unknown-issuer')) : null,
+        codeIn ? field(t('st.code'), codeIn, t('st.codeHint')) : null, msg,
+        h('div', { class: 'vw-actions' },
+          attested ? h('button', { class: 'vw-btn vw-primary', type: 'button', disabled: !iss, onclick: () => connectAttested(info) }, t('att.confirmWith', { issuer: iss ? iss.info.issuerName : '?' }))
+            : h('button', { class: 'vw-btn vw-primary', type: 'button', onclick: () => connect(info, codeIn ? codeIn.value.trim() : code) }, t('st.connectBtn')),
+          h('button', { class: 'vw-btn vw-ghost', type: 'button', onclick: () => close(null) }, t('st.notNow'))));
+    };
+    const connectAttested = async (info) => {
+      msg.textContent = t('att.asking');
+      let p;
+      try { p = await S.startAttested(wallet, info, streamKeys); } catch (e) { msg.replaceChildren(streamErrText(e), signInHelp(e) || ''); return; }
+      msg.textContent = t('st.waiting');
+      for (let i = 0; i < 20 && box.isConnected; i++) {
+        let got = null;
+        try { got = await p.poll(); } catch (e) { msg.textContent = streamErrText(e); return; }
+        if (got) {
+          const id = await guard(() => S.addStream(wallet, { descriptor: got.descriptor, descriptorUrl: info.link.url, subscriptionId: got.subscriptionId, ks: p.ks, relay: p.relay, attestation: got.attestation }));
+          close(id);
+          if (id) { toast(t('st.connected')); tab = 'streams'; render(); refreshStreams(true); }
+          return;
+        }
+        await sleep(1500);
+      }
+      msg.textContent = t('st.timeout');
+    };
+    const connect = async (info, c) => {
+      if (info.kind === 'descriptor' && info.stream.access === 'open') {
+        const id = await guard(() => S.addStream(wallet, { descriptor: info.doc, descriptorUrl: info.link.url }));
+        close(id);
+        if (id) { toast(t('st.connected')); tab = 'streams'; render(); refreshStreams(true); }
+        return;
+      }
+      if (!c || c.length < 22) { msg.textContent = t('st.needCode'); return; }
+      let p;
+      try { p = await S.startPairing(wallet, info, c, streamKeys); } catch (e) { msg.textContent = streamErrText(e); return; }
+      code = ''; // a pairing code is used once and kept only in memory (20.10)
+      const status = h('p', { class: 'vw-muted', role: 'status' }, t('st.waiting'));
+      let stop = false;
+      fill(box, h('p', {}, t('st.compare')), h('p', { class: 'vw-fp' }, p.fingerprint8), h('p', { class: 'vw-hint' }, t('st.compareHint')), status,
+        h('div', { class: 'vw-actions' }, h('button', { class: 'vw-btn vw-ghost', type: 'button', onclick: () => { stop = true; streamKeys.remove(`${wallet.id}|${p.ks.address}`).catch(() => {}); close(null); } }, t('st.cancelPair'))));
+      const until = Date.now() + 10 * 60 * 1000;
+      while (!stop && box.isConnected && Date.now() < until) {
+        let got = null;
+        try { got = await p.poll(); } catch (e) { status.textContent = streamErrText(e); }
+        if (got) {
+          const id = await guard(() => S.addStream(wallet, { descriptor: got.descriptor, descriptorUrl: info.link.url, subscriptionId: got.subscriptionId, ks: p.ks, relay: p.relay, card: info.card }));
+          if (!id) return;
+          if (info.kind === 'card') {
+            // the details came only now: nothing is taken in until the holder keeps the stream
+            await S.pause(wallet, id, true);
+            fill(box, h('p', {}, t('st.pairedSee')), streamFacts(got.descriptor.stream, { relay: p.relay }),
+              h('div', { class: 'vw-actions' },
+                h('button', { class: 'vw-btn vw-primary', type: 'button', onclick: async () => { await S.pause(wallet, id, false); close(id); toast(t('st.connected')); tab = 'streams'; render(); refreshStreams(true); } }, t('st.keep')),
+                h('button', { class: 'vw-btn vw-ghost', type: 'button', onclick: async () => { await guard(() => S.leave(wallet, id, streamKeys)); close(null); tab = 'streams'; render(); } }, t('st.leave'))));
+          } else { close(id); toast(t('st.connected')); tab = 'streams'; render(); refreshStreams(true); }
+          return;
+        }
+        await sleep(2500);
+      }
+      if (!stop && box.isConnected) status.textContent = t('st.timeout');
+    };
+    if (link) begin(link); else askLink();
+    return box;
+  });
+}
+
+// One suggestion in the review queue
+function suggestionView(r, e) {
+  const b = e.body, i = b.streamInfo || {};
+  const parts = i.participants || [];
+  const line = `${b.actor ? nameOf(b.actor) : (i.actor?.label || '?')} ${b.action} ${(b.objects || []).map((o) => o.label).join(', ')}`;
+  const when = String(b.occurredAt).replace('T', ' ').slice(0, 16) + (i.until ? ' - ' + String(i.until).slice(11, 16) : '');
+  const ask = [];
+  if (i.needsSelf) {
+    const sel = select([['', t('st.pickMe')], ...parts.map((p) => [p.ref, p.label])], '');
+    ask.push(h('div', { class: 'vw-ask' }, h('p', {}, t('st.whichYou')), sel,
+      h('div', { class: 'vw-actions' },
+        h('button', { class: 'vw-btn', onclick: async () => { if (!sel.value) return; await guard(() => S.setSelf(wallet, r.rootId, sel.value)); render(); } }, t('st.thatsMe')),
+        h('button', { class: 'vw-btn vw-ghost', onclick: async () => { await guard(() => S.keepAs(wallet, e.rootId, 'witness')); render(); } }, t('st.wasThere')),
+        h('button', { class: 'vw-btn vw-ghost', onclick: async () => { await guard(() => S.keepAs(wallet, e.rootId, 'affected')); render(); } }, t('st.affectsMe')))));
+  } else if (!b.actor) {
+    const label = i.actor?.label || '?';
+    const sel = select([['', t('st.pickContact')], ['new', t('st.newContact', { name: label })], ...contacts().filter((c) => c.body.type !== 'self').map((c) => [c.rootId, c.body.name])], '');
+    ask.push(h('div', { class: 'vw-ask' }, h('p', {}, t('st.whoIs', { name: label })), sel,
+      h('button', { class: 'vw-btn', onclick: async () => {
+        if (!sel.value) return;
+        const id = sel.value === 'new' ? await wallet.add('contact', { type: 'person', name: label.slice(0, 300) }) : sel.value;
+        if (i.actor?.ref) await guard(() => S.mapContact(wallet, r.rootId, i.actor.ref, id));
+        else await guard(() => wallet.correct(e.rootId, { ...b, actor: id }));
+        render();
+      } }, t('st.map'))));
+  }
+  const confirmOne = async () => {
+    const n = await guard(() => S.confirm(wallet, [e.rootId]));
+    if (n) lastHandConfirm = { streamRoot: r.rootId, kind: i.kind, ref: i.actor?.ref || '', label: i.actor?.label || '' };
+    return n;
+  };
+  return h('div', { class: 'vw-sugg' },
+    h('p', {}, h('strong', {}, line)),
+    h('p', { class: 'vw-muted vw-small' }, [when, kindWord(i.kind || 'other'), t('role.' + b.role), typeof i.confidence === 'number' ? t('st.confidence', { p: Math.round(i.confidence * 100) }) : null].filter(Boolean).join(' · ')),
+    i.summary ? h('p', { class: 'vw-small' }, i.summary) : null,
+    i.source ? h('p', { class: 'vw-small' }, i.source.url ? linkButton(i.source.url, i.source.label || t('st.source')) : i.source.label) : null,
+    ask,
+    h('div', { class: 'vw-actions' },
+      h('button', { class: 'vw-btn vw-primary', disabled: !S.resolved(b), onclick: async () => { if (await confirmOne()) render(); } }, t('in.confirm')),
+      h('button', { class: 'vw-btn', disabled: !S.resolved(b), onclick: async () => {
+        if (!(await confirmOne())) return;
+        render();
+        modal(t('st.rate'), (close) => h('div', {}, h('p', {}, line), reactionRow(e.rootId, null, (v) => { toast(t('rx.saved', { r: t('rx.' + v) })); close(true); render(); })));
+      } }, t('st.confirmRate')),
+      h('button', { class: 'vw-btn vw-ghost', onclick: async () => { await guard(() => S.reject(wallet, [e.rootId])); render(); } }, t('in.reject'))));
+}
+
+// Suggestions grouped by stream, day and person (20.7.3), with group actions
+function streamQueue() {
+  const groups = new Map();
+  for (const r of streamRecs()) for (const e of S.pendingOf(wallet, r)) {
+    const day = String(e.body.occurredAt).slice(0, 10);
+    const person = e.body.streamInfo?.actor?.label || '-';
+    const key = r.rootId + '|' + day + '|' + person;
+    if (!groups.has(key)) groups.set(key, { r, day, person, list: [] });
+    groups.get(key).list.push(e);
+  }
+  const offer = lastHandConfirm && S.streams(wallet).find((x) => x.rootId === lastHandConfirm.streamRoot) ? lastHandConfirm : null;
+  const ruleOffer = offer && (offer.ref || offer.kind) ? h('div', { class: 'vw-card vw-new' },
+    h('p', {}, t('st.ruleOffer', { kind: offer.kind || '-', name: offer.label || '-' })), h('p', { class: 'vw-hint' }, t('st.ruleHint')),
+    h('div', { class: 'vw-actions' },
+      h('button', { class: 'vw-btn vw-primary', onclick: async () => {
+        const match = { ...(offer.kind ? { kind: offer.kind } : {}), ...(offer.ref ? { actorRef: offer.ref } : {}) };
+        await guard(() => S.addRule(wallet, offer.streamRoot, match, `${offer.kind || ''} · ${offer.label || ''}`));
+        lastHandConfirm = null; toast(t('st.ruleMade')); render();
+      } }, t('st.makeRule')),
+      h('button', { class: 'vw-btn vw-ghost', onclick: () => { lastHandConfirm = null; render(); } }, t('st.noRule')))) : null;
+  if (!groups.size) return ruleOffer;
+  const sorted = [...groups.values()].sort((a, b) => b.day.localeCompare(a.day) || a.person.localeCompare(b.person));
+  return h('div', {}, ruleOffer, h('h2', {}, t('st.queue', { n: streamPendingCount() })), sorted.map((g) => {
+    const ready = g.list.filter((e) => S.resolved(e.body));
+    return h('section', { class: 'vw-card' },
+      h('div', { class: 'vw-row' }, h('h3', {}, `${g.r.body.descriptor.stream.title} · ${g.day} · ${g.person}`),
+        h('span', { class: 'vw-actions' },
+          ready.length > 1 ? h('button', { class: 'vw-btn', onclick: async () => { const n = await guard(() => S.confirm(wallet, ready.map((e) => e.rootId))); if (n) toast(t('st.confirmedN', { n })); render(); } }, t('st.confirmAll', { n: ready.length })) : null,
+          g.list.length > 1 ? h('button', { class: 'vw-btn vw-ghost', onclick: async () => { if (!confirm(t('st.rejectAllQ', { n: g.list.length }))) return; await guard(() => S.reject(wallet, g.list.map((e) => e.rootId))); render(); } }, t('st.rejectAll')) : null)),
+      g.list.map((e) => suggestionView(g.r, e)));
+  }));
+}
+
+function feedbackRows(r) {
+  const items = S.feedbackItems(wallet, r.body.streamId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  if (!items.length) return null;
+  return h('details', {}, h('summary', {}, t('fb.sent', { n: items.length })), items.map((m) => {
+    const f = m.body.feedback;
+    const about = m.body.about ? wallet.get(m.body.about) : null;
+    return h('div', { class: 'vw-row' },
+      h('span', {}, `${f.sentAt?.slice(0, 10) || m.body.sentAt.slice(0, 10)} · ${t('fb.type.' + f.type)} · ${t('fb.sender.' + f.sender)}${about ? ' · ' + phrase(about) : ''}`),
+      h('span', { class: 'vw-chips' }, h('span', { class: 'vw-chip' + (f.status === 'published' ? ' vw-chip-sys' : '') }, t('fb.status.' + f.status)),
+        f.url ? linkButton(f.url, t('fb.where')) : null,
+        f.status !== 'withdrawn' ? h('button', { class: 'vw-btn vw-ghost', onclick: async () => { const st = await guard(() => S.feedbackRequest(wallet, m.rootId, 'feedback-status', streamKeys)); if (st) toast(t('fb.status.' + st)); render(); } }, t('fb.check')) : null,
+        f.status !== 'withdrawn' ? h('button', { class: 'vw-btn vw-ghost', onclick: async () => {
+          if (!confirm(t('fb.withdrawQ'))) return;
+          const st = await guard(() => S.feedbackRequest(wallet, m.rootId, 'feedback-withdraw', streamKeys));
+          toast(st === 'withdrawn' ? t('fb.withdrawn') : t('fb.withdrawAsked')); render();
+        } }, t('fb.withdraw')) : null));
+  }));
+}
+
+function streamCard(r) {
+  const b = r.body, s = b.descriptor.stream;
+  const pend = S.pendingOf(wallet, r).length;
+  const counts = S.ruleCounts(wallet, r);
+  const err = streamErr.get(r.rootId);
+  const dev = h('p', { class: 'vw-hint' });
+  if (s.access === 'code' && !b.left) S.deviceKeys(wallet, r, streamKeys).then((dk) => { if (!dk) dev.textContent = t('st.otherDevice'); }).catch(() => {});
+  const fp = h('span', {});
+  S.fingerprint(s.provider.address).then((f) => { fp.textContent = S.fp8(f); });
+  const state = b.left ? t('st.left', { date: b.left.at.slice(0, 10) }) : b.leaving ? t('st.leaving') : b.paused ? t(b.pausedReason === 'too-many' ? 'st.pausedFull' : 'st.paused') : t('st.active');
+  const upd = (b.updates || []).map((u) => {
+    const ev = (b.handled || []).find((x) => x.eventId === u.eventId)?.eventRoot;
+    const cur = ev ? wallet.get(ev) : null;
+    return h('div', { class: 'vw-ask' },
+      h('p', {}, u.withdrawn ? t('st.updWithdrawn', { what: cur ? phrase(cur) : u.eventId }) : t('st.updChanged', { what: cur ? phrase(cur) : u.eventId, now: `${u.event.action} ${(u.event.objects || []).map((o) => o.label).join(', ')}` })),
+      h('div', { class: 'vw-actions' },
+        h('button', { class: 'vw-btn', onclick: async () => { await guard(() => S.acceptUpdate(wallet, r.rootId, u.eventId)); render(); } }, t(u.withdrawn ? 'st.updWithdrawMine' : 'st.updAccept')),
+        h('button', { class: 'vw-btn vw-ghost', onclick: async () => { await guard(() => S.dismissUpdate(wallet, r.rootId, u.eventId)); render(); } }, t('st.updKeep'))));
+  });
+  return h('article', { class: 'vw-card' },
+    h('div', { class: 'vw-row' }, h('h3', {}, s.title),
+      h('span', { class: 'vw-chips' }, h('span', { class: 'vw-chip' }, state), pend ? h('span', { class: 'vw-chip vw-chip-sys' }, t('st.pending', { n: pend })) : null)),
+    h('p', { class: 'vw-muted vw-small' }, `${s.provider.name} · ${t('st.fingerprint')} `, fp, ` · ${s.transport.map((x) => t('st.tr.' + x)).join(', ')}`),
+    err ? h('p', { class: 'vw-error' }, /attestation-expired/.test(err.msg) ? t('att.expired') : t('st.lastError', { msg: err.msg })) : null,
+    s.access === 'attested' && !b.left ? (() => {
+      const a = S.accessAttestation(r);
+      const soon = !a || Date.parse(a.expiresAt) - Date.now() < 7 * 86400000 || /attestation-expired/.test(err?.msg || '');
+      const who = h('span', {}); issuerName(s.requires.issuer, who);
+      return h('div', { class: 'vw-row' }, h('span', { class: 'vw-small' }, t('att.until', { claim: claimWord(s.requires.claim), date: a ? a.expiresAt.slice(0, 10) : '-' }), ' (', who, ')'),
+        soon ? h('button', { class: 'vw-btn', onclick: async () => {
+          if (!confirm(t('att.renewQ'))) return;
+          try { await S.renewAccess(wallet, r.rootId, streamKeys); streamErr.delete(r.rootId); toast(t('att.renewed')); render(); refreshStreams(true); } catch (e) { toast(streamErrText(e)); }
+        } }, t('att.renew')) : null);
+    })() : null,
+    b.descriptorOffer ? h('div', { class: 'vw-ask' }, h('p', {}, t('st.descChanged')), streamFacts(b.descriptorOffer.stream),
+      h('div', { class: 'vw-actions' },
+        h('button', { class: 'vw-btn vw-primary', onclick: async () => { await guard(() => S.acceptDescriptor(wallet, r.rootId)); render(); } }, t('st.descAccept')),
+        h('button', { class: 'vw-btn vw-ghost', onclick: async () => { await guard(() => S.declineDescriptor(wallet, r.rootId)); render(); } }, t('st.descDecline')))) : null,
+    upd,
+    (b.suspicious || []).length ? h('p', { class: 'vw-hint' }, t('st.suspicious', { n: b.suspicious.length })) : null,
+    (b.rules || []).length ? h('div', {}, h('strong', {}, t('st.rules')), (b.rules || []).map((x) => h('div', { class: 'vw-row' },
+      h('span', {}, `${x.label || x.match.kind || ''} · ${t('st.ruleCount', { today: counts[x.id]?.today || 0, total: counts[x.id]?.total || 0 })}`),
+      h('button', { class: 'vw-btn vw-ghost', onclick: async () => { if (!confirm(t('st.undoQ'))) return; const n = await guard(() => S.undoRule(wallet, r.rootId, x.id)); toast(t('st.undone', { n: n || 0 })); render(); } }, t('st.undo'))))) : null,
+    feedbackRows(r),
+    dev,
+    h('div', { class: 'vw-actions' },
+      !b.left && !b.leaving ? h('button', { class: 'vw-btn', onclick: async () => { await guard(() => S.pause(wallet, r.rootId, !b.paused)); render(); } }, t(b.paused ? 'st.resume' : 'st.pause')) : null,
+      !b.left && s.transport.includes('relay') && s.access === 'code' ? h('button', { class: 'vw-btn vw-ghost', onclick: async () => { if (await guard(() => S.askReplay(wallet, r.rootId, streamKeys))) toast(t('st.replayAsked')); } }, t('st.replay')) : null,
+      s.feedback?.accepts.includes('event') ? h('button', { class: 'vw-btn vw-ghost', onclick: () => feedbackDialog(r, null) }, t('fb.tell')) : null,
+      h('button', { class: 'vw-btn vw-ghost', onclick: () => modal(t('st.details'), () => streamFacts(s, {})) }, t('st.details')),
+      b.leaving ? h('button', { class: 'vw-btn', onclick: async () => { const done = await guard(() => S.retryLeave(wallet, r.rootId, streamKeys)); toast(t(done ? 'st.leftNow' : 'st.leaving')); render(); } }, t('st.retryLeave')) : null,
+      !b.left && !b.leaving ? h('button', { class: 'vw-btn vw-ghost', onclick: async () => {
+        if (!confirm(t('st.leaveQ'))) return;
+        const done = await guard(() => S.leave(wallet, r.rootId, streamKeys));
+        toast(t(done ? 'st.leftNow' : 'st.leaving')); render();
+      } }, t('st.leave')) : null,
+      h('button', { class: 'vw-btn vw-ghost vw-danger', onclick: async () => { if (!confirm(t('st.forgetQ'))) return; await guard(() => S.forget(wallet, r.rootId, streamKeys)); render(); } }, t('st.forget'))));
+}
+
+function tabStreams() {
+  const recs = streamRecs();
+  const today = new Date().toISOString().slice(0, 10);
+  const byRuleToday = wallet.list('event').filter((e) => e.body.byRule && e.body.status === 'confirmed' && String(e.body.byRuleAt).slice(0, 10) === today).length;
+  return [
+    h('div', { class: 'vw-toolbar' },
+      h('button', { class: 'vw-btn vw-primary', onclick: () => connectDialog() }, t('st.connect')),
+      recs.length ? h('button', { class: 'vw-btn', onclick: () => refreshStreams(false) }, t('st.check')) : null),
+    !recs.length ? [h('p', { class: 'vw-lead' }, t('st.none')), h('p', { class: 'vw-hint' }, t('st.lead'))] : null,
+    byRuleToday ? h('p', { class: 'vw-hint' }, t('st.rulesToday', { n: byRuleToday })) : null,
+    streamQueue(),
+    recs.length ? h('h2', {}, t('st.yours')) : null,
+    recs.map(streamCard),
+  ];
+}
+
+// Feedback to a stream (20.11): the policy first, the most private sender form first, exactly what goes, then Send
+function feedbackDialog(r, ev = null) {
+  const s = r.body.descriptor.stream, fb = s.feedback;
+  return modal(t('fb.title'), (close) => {
+    const box = h('div', {}, h('p', { class: 'vw-muted' }, t('st.checking')));
+    (async () => {
+      if (S.policyConflict(r)) { fill(box, h('p', { class: 'vw-error' }, t('st.err.policy-conflict'))); return; }
+      const hasKeys = !!(await S.deviceKeys(wallet, r, streamKeys).catch(() => null));
+      const forms = S.senderForms(s, hasKeys);
+      const types = (fb?.accepts || []).filter((x) => (ev ? x !== 'event' : x === 'event'));
+      if (!types.length || !forms.length) { fill(box, h('p', {}, t('fb.notAccepted'))); return; }
+      const msg = h('p', { class: 'vw-error', role: 'alert' });
+      const type = select(types.map((x) => [x, t('fb.type.' + x)]), types[0]);
+      const sender = select(forms.map((x) => [x, t('fb.level.' + S.senderLevel(s, x)) + (S.senderLevel(s, x) === 'checked' && x === 'subscriber' ? ' · ' + t('fb.sender.subscriber') : '')]), forms[0]);
+      const senderHint = h('p', { class: 'vw-hint' });
+      const publish = h('select', {});
+      const role = select(['actor', 'affected', 'user', 'witness'].map((x) => [x, t('role.' + x)]), ev?.body.role || 'user');
+      const a = ev ? assessments().filter((x) => x.body.eventId === ev.rootId && x.body.phase === 'realized').pop() : null;
+      const rx = a ? reactionOf(a.body) : null;
+      const reaction = select([['', t('fb.noReaction')], ...REACTIONS.map((v) => [String(v), t('rx.' + v)])], rx !== null && rx !== undefined ? String(rx) : '');
+      const words = h('textarea', { rows: 3, maxlength: 2000 }); words.value = a?.body.reasons || '';
+      const gained = h('textarea', { rows: 2 }); gained.value = (a?.body.gained || []).join('\n');
+      const lost = h('textarea', { rows: 2 }); lost.value = (a?.body.lost || []).join('\n');
+      const gap = select([['', '-'], ...['above-plan', 'as-planned', 'below-plan', 'harm', 'unknown'].map((x) => [x, t('fb.gap.' + x)])], '');
+      const withV = typeof a?.body.v === 'number' ? h('input', { type: 'checkbox' }) : null;
+      const withSpent = typeof a?.body.spentV === 'number' ? h('input', { type: 'checkbox' }) : null;
+      const action = h('input', { type: 'text', maxlength: 300 });
+      const objects = h('textarea', { rows: 2 });
+      const date = h('input', { type: 'date', value: today() });
+      const place = h('input', { type: 'text', maxlength: 300 });
+      const preview = h('pre', { class: 'vw-pre' });
+      const sendBtn = h('button', { class: 'vw-btn vw-primary', type: 'button', disabled: true }, t('fb.send'));
+      let built = null;
+      const fillPublish = () => {
+        publish.replaceChildren(...S.publishChoices(s, sender.value).map((x) => h('option', { value: x }, t('fb.publish.' + x))));
+        senderHint.textContent = t('fb.senderHint.' + sender.value) + (fb.requires && sender.value !== 'named' ? ' ' + t('fb.checkedHint') : '');
+      };
+      fillPublish();
+      const assessBox = h('div', {}, field(t('fb.reaction'), reaction), field(t('fb.words'), words), field(t('fb.gained'), gained), field(t('fb.lost'), lost), field(t('fb.gap'), gap),
+        withV ? h('label', { class: 'vw-check' }, withV, h('span', {}, t('fb.withV', { v: pct(a.body.v) }))) : null,
+        withSpent ? h('label', { class: 'vw-check' }, withSpent, h('span', {}, t('fb.withSpent', { v: pct(a.body.spentV) }))) : null);
+      const eventBox = h('div', {}, field(t('fb.action'), action, t('fb.actionHint')), field(t('fb.objects'), objects, t('fb.objectsHint')), field(t('fb.date'), date), field(t('fb.place'), place));
+      const showParts = () => { assessBox.hidden = type.value === 'participation'; eventBox.hidden = type.value !== 'event'; };
+      showParts();
+      const invalidate = () => { built = null; sendBtn.disabled = true; preview.textContent = ''; };
+      [type, sender, publish, role, reaction, words, gained, lost, gap, action, objects, date, place, withV, withSpent].filter(Boolean).forEach((x) => x.addEventListener('input', invalidate));
+      type.addEventListener('change', showParts);
+      sender.addEventListener('change', () => { fillPublish(); invalidate(); });
+      const fields = () => {
+        const f = { type: type.value, sender: sender.value, publish: publish.value, role: role.value };
+        if (ev) f.aboutEventRootId = ev.rootId;
+        if (type.value === 'event') f.event = { action: action.value.trim(), objects: lines(objects.value).map((label) => ({ label })), occurredAt: date.value || undefined, place: place.value.trim() || undefined };
+        if (type.value !== 'participation') {
+          const as = { phase: 'realized' };
+          if (reaction.value !== '') as.reaction = Number(reaction.value);
+          if (words.value.trim()) as.words = words.value.trim();
+          if (lines(gained.value).length) as.gained = lines(gained.value);
+          if (lines(lost.value).length) as.lost = lines(lost.value);
+          if (gap.value) as.planGap = gap.value;
+          if (withV?.checked) as.v = a.body.v;
+          if (withSpent?.checked) as.spentV = a.body.spentV;
+          if (Object.keys(as).length > 1) f.assessment = as;
+        }
+        return f;
+      };
+      const review = async () => {
+        msg.textContent = '';
+        try {
+          const f = fields();
+          // checked, not named: the issuer is asked only after the holder agrees, and sees the key, never the item
+          if (fb.requires && f.sender !== 'named') {
+            f.attest = async (ks, req, aud) => {
+              if (!confirm(t('att.askFb', { issuer: issuerName(req.issuer), claim: claimWord(req.claim) }))) throw Object.assign(new Error('cancelled'), { code: 'cancelled' });
+              return S.attestWith(ks, req, aud);
+            };
+          }
+          built = await S.buildFeedback(wallet, r.rootId, f, streamKeys);
+          const { sig, ...shown } = built.item;
+          preview.textContent = JSON.stringify(shown, null, 2);
+          sendBtn.disabled = false;
+        } catch (e) { if (e.code !== 'cancelled') msg.replaceChildren(streamErrText(e), signInHelp(e) || ''); }
+      };
+      sendBtn.addEventListener('click', async () => {
+        if (!built) return;
+        sendBtn.disabled = true;
+        const id = await guard(() => S.sendFeedback(wallet, r.rootId, built, { aboutEventRootId: ev?.rootId, keyStore: streamKeys }));
+        if (!id) { sendBtn.disabled = false; return; }
+        if (built.item.sender !== 'named') await S.checkReceipts(wallet, id, streamKeys).catch(() => {});
+        toast(t('fb.sentNow', { status: t('fb.status.' + wallet.get(id).body.feedback.status) }));
+        close(id); render();
+      });
+      fill(box,
+        h('div', { class: 'vw-card' }, h('strong', {}, t('fb.policy', { title: s.title })),
+          h('p', {}, t('fb.moderation.' + fb.moderation)), h('p', {}, t('fb.publishes.' + fb.publishes)),
+          fb.retentionDays != null ? h('p', {}, t('fb.retention', { n: fb.retentionDays })) : null,
+          fb.rulesUrl ? h('p', {}, linkButton(fb.rulesUrl, t('fb.rules'))) : null,
+          h('p', { class: 'vw-hint' }, t('fb.claims')),
+          fb.requires ? requiresView(fb.requires, { feedback: true }) : null),
+        ev ? h('p', {}, h('strong', {}, phrase(ev))) : null,
+        field(t('fb.type'), type), field(t('fb.sender'), sender), senderHint, field(t('fb.publish'), publish), field(t('fb.role'), role),
+        eventBox, assessBox,
+        h('p', { class: 'vw-hint' }, t('fb.onlyThis')),
+        msg,
+        h('div', { class: 'vw-actions' }, h('button', { class: 'vw-btn', type: 'button', onclick: review }, t('fb.review')), sendBtn),
+        preview);
+    })();
+    return box;
+  });
 }
 
 // ---- settings ----
@@ -2257,6 +2765,7 @@ export async function start() {
   const siteLang = document.querySelector('meta[name="aevri-lang"]')?.content; // set by the institute page for /xx/ addresses
   await loadLang(saved || (LANGS.includes(siteLang) ? siteLang : null) || (navigator.language || 'en').slice(0, 2));
   ['pointerdown', 'keydown'].forEach((ev) => document.addEventListener(ev, touch, { passive: true }));
+  setInterval(() => { if (wallet && document.visibilityState === 'visible') refreshStreams(true); }, 60000);
   await render();
 }
 
