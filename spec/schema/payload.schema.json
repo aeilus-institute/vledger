@@ -1286,7 +1286,11 @@
             "unsubscribe",
             "unsubscribed",
             "stream-events",
-            "replay"
+            "replay",
+            "stream-feedback",
+            "feedback-receipt",
+            "feedback-status",
+            "feedback-withdraw"
           ]
         },
         "sentAt": {

@@ -536,6 +536,74 @@
               "$ref": "common.schema.json#/$defs/time"
             }
           }
+        },
+        {
+          "$ref": "stream.schema.json#/$defs/feedback"
+        },
+        {
+          "$ref": "stream.schema.json#/$defs/feedbackReceipt"
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "providerAddress",
+            "streamId",
+            "feedbackId",
+            "requestId",
+            "sig"
+          ],
+          "properties": {
+            "kind": {
+              "const": "feedback-status"
+            },
+            "providerAddress": {
+              "$ref": "common.schema.json#/$defs/address"
+            },
+            "streamId": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "feedbackId": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "requestId": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "sig": {
+              "$ref": "common.schema.json#/$defs/b64u"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "providerAddress",
+            "streamId",
+            "feedbackId",
+            "requestId",
+            "sig"
+          ],
+          "properties": {
+            "kind": {
+              "const": "feedback-withdraw"
+            },
+            "providerAddress": {
+              "$ref": "common.schema.json#/$defs/address"
+            },
+            "streamId": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "feedbackId": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "requestId": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "sig": {
+              "$ref": "common.schema.json#/$defs/b64u"
+            }
+          }
         }
       ]
     }

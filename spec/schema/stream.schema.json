@@ -136,6 +136,85 @@
         },
         "updatedAt": {
           "$ref": "common.schema.json#/$defs/time"
+        },
+        "audience": {
+          "enum": [
+            "participants",
+            "selected-readers",
+            "public"
+          ]
+        },
+        "feedback": {
+          "type": "object",
+          "required": [
+            "accepts",
+            "senders",
+            "moderation",
+            "publishes"
+          ],
+          "properties": {
+            "accepts": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "enum": [
+                  "assessment",
+                  "participation",
+                  "event"
+                ]
+              }
+            },
+            "senders": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "enum": [
+                  "anonymous",
+                  "subscriber",
+                  "named"
+                ]
+              }
+            },
+            "moderation": {
+              "enum": [
+                "none",
+                "before",
+                "after"
+              ]
+            },
+            "publishes": {
+              "enum": [
+                "no",
+                "anonymous",
+                "named",
+                "sender-choice"
+              ]
+            },
+            "retentionDays": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "rulesUrl": {
+              "type": "string",
+              "pattern": "^https://"
+            }
+          }
+        },
+        "owner": {
+          "type": "object",
+          "required": [
+            "card",
+            "proof"
+          ],
+          "properties": {
+            "card": {
+              "$ref": "card.schema.json"
+            },
+            "proof": {
+              "$ref": "common.schema.json#/$defs/b64u"
+            }
+          },
+          "description": "Named personal stream: identity key over {purpose, streamId, streamAddress}"
         }
       },
       "allOf": [
@@ -333,6 +412,59 @@
         },
         "sig": {
           "$ref": "common.schema.json#/$defs/b64u"
+        },
+        "assessment": {
+          "type": "object",
+          "properties": {
+            "phase": {
+              "enum": [
+                "realized",
+                "retro"
+              ]
+            },
+            "reaction": {
+              "enum": [
+                -100,
+                -20,
+                0,
+                20,
+                100,
+                500
+              ]
+            },
+            "gained": {
+              "type": "array",
+              "items": {
+                "$ref": "common.schema.json#/$defs/line"
+              }
+            },
+            "lost": {
+              "type": "array",
+              "items": {
+                "$ref": "common.schema.json#/$defs/line"
+              }
+            },
+            "words": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "planGap": {
+              "enum": [
+                "above-plan",
+                "as-planned",
+                "below-plan",
+                "harm",
+                "unknown"
+              ]
+            },
+            "v": {
+              "type": "number"
+            },
+            "spentV": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
         }
       }
     },
@@ -400,6 +532,370 @@
         },
         "encKey": {
           "$ref": "common.schema.json#/$defs/ecJwk"
+        }
+      }
+    },
+    "feedback": {
+      "type": "object",
+      "required": [
+        "kind",
+        "version",
+        "feedbackId",
+        "providerAddress",
+        "streamId",
+        "type",
+        "publish",
+        "sender",
+        "key",
+        "replyEncKey",
+        "sentAt",
+        "sig"
+      ],
+      "properties": {
+        "kind": {
+          "const": "stream-feedback"
+        },
+        "version": {
+          "const": 1
+        },
+        "feedbackId": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "providerAddress": {
+          "$ref": "common.schema.json#/$defs/address"
+        },
+        "streamId": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "descriptorRev": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "type": {
+          "enum": [
+            "assessment",
+            "participation",
+            "event"
+          ]
+        },
+        "about": {
+          "type": "object",
+          "required": [
+            "eventId"
+          ],
+          "properties": {
+            "eventId": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "rev": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "event": {
+          "type": "object",
+          "required": [
+            "action"
+          ],
+          "properties": {
+            "action": {
+              "$ref": "common.schema.json#/$defs/line"
+            },
+            "objects": {
+              "type": "array",
+              "maxItems": 100,
+              "items": {
+                "type": "object",
+                "required": [
+                  "label"
+                ],
+                "properties": {
+                  "label": {
+                    "$ref": "common.schema.json#/$defs/line"
+                  }
+                }
+              }
+            },
+            "occurredAt": {
+              "oneOf": [
+                {
+                  "$ref": "common.schema.json#/$defs/time"
+                },
+                {
+                  "$ref": "common.schema.json#/$defs/date"
+                }
+              ]
+            },
+            "place": {
+              "$ref": "common.schema.json#/$defs/line"
+            }
+          }
+        },
+        "role": {
+          "enum": [
+            "actor",
+            "affected",
+            "user",
+            "witness"
+          ]
+        },
+        "assessment": {
+          "type": "object",
+          "properties": {
+            "phase": {
+              "enum": [
+                "realized",
+                "retro"
+              ]
+            },
+            "reaction": {
+              "enum": [
+                -100,
+                -20,
+                0,
+                20,
+                100,
+                500
+              ]
+            },
+            "gained": {
+              "type": "array",
+              "items": {
+                "$ref": "common.schema.json#/$defs/line"
+              }
+            },
+            "lost": {
+              "type": "array",
+              "items": {
+                "$ref": "common.schema.json#/$defs/line"
+              }
+            },
+            "words": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "planGap": {
+              "enum": [
+                "above-plan",
+                "as-planned",
+                "below-plan",
+                "harm",
+                "unknown"
+              ]
+            },
+            "v": {
+              "type": "number"
+            },
+            "spentV": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "publish": {
+          "enum": [
+            "no",
+            "anonymous",
+            "named"
+          ]
+        },
+        "sender": {
+          "enum": [
+            "anonymous",
+            "subscriber",
+            "named"
+          ]
+        },
+        "card": {
+          "$ref": "card.schema.json"
+        },
+        "key": {
+          "$ref": "common.schema.json#/$defs/address"
+        },
+        "replyEncKey": {
+          "$ref": "common.schema.json#/$defs/ecJwk"
+        },
+        "sentAt": {
+          "$ref": "common.schema.json#/$defs/time"
+        },
+        "sig": {
+          "$ref": "common.schema.json#/$defs/b64u"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "assessment",
+                  "participation"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "about"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "event"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "event"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "assessment"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "assessment"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "sender": {
+                "const": "named"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "card"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "card"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "feedbackReceipt": {
+      "type": "object",
+      "required": [
+        "kind",
+        "providerAddress",
+        "streamId",
+        "feedbackId",
+        "itemHash",
+        "statusRev",
+        "status",
+        "sig"
+      ],
+      "properties": {
+        "kind": {
+          "const": "feedback-receipt"
+        },
+        "providerAddress": {
+          "$ref": "common.schema.json#/$defs/address"
+        },
+        "streamId": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "feedbackId": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "itemHash": {
+          "$ref": "common.schema.json#/$defs/sha256"
+        },
+        "statusRev": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "status": {
+          "enum": [
+            "received",
+            "pending",
+            "published",
+            "rejected",
+            "withdrawn"
+          ]
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https://"
+        },
+        "reason": {
+          "$ref": "common.schema.json#/$defs/text"
+        },
+        "sig": {
+          "$ref": "common.schema.json#/$defs/b64u"
+        }
+      }
+    },
+    "feedbackAssessment": {
+      "type": "object",
+      "properties": {
+        "phase": {
+          "enum": [
+            "realized",
+            "retro"
+          ]
+        },
+        "reaction": {
+          "enum": [
+            -100,
+            -20,
+            0,
+            20,
+            100,
+            500
+          ]
+        },
+        "gained": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/line"
+          }
+        },
+        "lost": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/line"
+          }
+        },
+        "words": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "planGap": {
+          "enum": [
+            "above-plan",
+            "as-planned",
+            "below-plan",
+            "harm",
+            "unknown"
+          ]
+        },
+        "v": {
+          "type": "number"
+        },
+        "spentV": {
+          "type": "number",
+          "minimum": 0
         }
       }
     }

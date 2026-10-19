@@ -4,7 +4,7 @@ Status: **draft 1.0-d9** (2026-10-19). Editor: Aeilus Value Research Institute (
 Licence: CC BY 4.0 (this text), MIT (reference code and schemas). Requirements (Russian): TZ v0.2 and v0.3.
 Fixtures in `fixtures/` are produced by `reference/` (Web Crypto) and pass the independent `tools/verify_fixtures.py`.
 Changes from d8: event streams (section 20): providers suggest events to the people who took part,
-connected by a QR code or a link; `stream` records, `streamRef`, `schema/stream.schema.json`.
+connected by a QR code or a link; feedback to a stream and personal streams (20.11, 20.12); `stream` records, `streamRef`, `schema/stream.schema.json`.
 Changes from d7: spheres link VSS schemas and show them as a map (section 19).
 Changes from d6: unlock with device biometrics (section 18), kept on the device, outside the wallet document.
 Changes from d6: one-click `reaction` in assessments (section 17); `registrySystemId` in value systems.
@@ -387,7 +387,9 @@ connected to it is a **subscriber**. Reviewed with Codex and Grok Heavy (`docs/V
 
 A provider only **suggests**. Every event lands in the wallet as `status: suggested` (section 13) and reaches the
 timeline only when the holder confirms it, one by one or by a rule the holder made (20.7). The provider never writes into a wallet, never reads it, and learns
-nothing about what the holder did with an event: no confirmations, rejections, reactions or assessments go back.
+nothing about what the holder did with an event: no confirmations, rejections, reactions or assessments go back
+automatically. The holder MAY share an assessment, a participation or a new event with a stream, each time by their
+own action (20.11), and MAY run a stream of their own (20.12).
 
 Providers and relays can still see connection and delivery metadata (addresses, times, sizes). Per-stream keys
 (20.4) keep two providers from linking one holder by key, but they do not hide an identity a provider already knows
@@ -407,10 +409,11 @@ A provider describes a stream with a signed descriptor (`schema/stream.schema.js
     "transport": ["https", "relay"],
     "endpoint": "https://example.org/vledger-stream/v1",
     "relay": "https://aeilus.institute/api/v1/vledger/relay",
-    "identifies": "provider | holder",
+    "identifies": "provider | holder", "audience": "participants | selected-readers | public",
     "eventKinds": ["meeting", "call", "message", "task", "visit", "publication", "other"],
     "policy": { "keeps": "events and transcripts, on the provider's own machine", "retentionDays": 365,
                 "deletesOnLeave": true, "rawStays": true, "url": "https://example.org/privacy" },
+    "feedback": { "accepts": ["assessment", "participation", "event"], "...": "20.11" },
     "updatedAt": "2026-10-19T09:00:00Z" },
   "sig": "<provider identity key over JCS of stream>" }
 ```
@@ -450,7 +453,7 @@ The wallet then:
 
 1. fetches and verifies the descriptor (or the card), and removes the pairing code from the address bar and history;
 2. shows what will happen: title, provider and fingerprint, what kinds of events it suggests, how it identifies the
-   holder, its policy, the transport (and that a relay sees delivery times), and "nothing goes back";
+   holder, its policy, the transport (and that a relay sees delivery times), and "nothing goes back automatically";
 3. on the holder's tap **Connect**, creates a **subscription key pair** for this stream on this device (Ed25519 to
    sign, P-256 to receive) and subscribes (20.4).
 
@@ -470,6 +473,7 @@ Open streams need no subscription: the wallet only pulls. For `code` streams:
   `{kind: "subscribed", streamId, subscriptionId, descriptor?}`; a repeated identical request returns the same answer.
 - The provider binds the subscription to what the pairing screen belongs to (its owner, a participant). It MUST NOT
   ask for, accept or store the holder's main wallet address, name, contacts or anything from the wallet.
+  Subscribing never requires a disclosure; feedback the holder sends separately (20.11) is allowed.
 - Subscription keys stay on the device where they were made, in encrypted device-local storage, outside the wallet
   document (like section 18): they are never synced or exported. Another device of the same holder connects to
   an open stream by itself and to a private stream with its own pairing. The stream record itself (20.8) is synced, so all devices know the stream and
@@ -562,7 +566,9 @@ A conforming provider:
    an assessment a condition of anything (as registries, section 12);
 4. keeps raw recordings to itself and sends words, not media;
 5. does not correlate subscriptions or profile holders, and keeps no more delivery data than it needs;
-6. stops at Leave and keeps its deletion promise.
+6. stops at Leave and keeps its deletion promise;
+7. if it accepts feedback, follows its stated feedback policy, honours withdrawals and never makes feedback a
+   condition of anything (20.11).
 
 ### 20.10. Security
 
@@ -574,3 +580,103 @@ A conforming provider:
   relay or HTTPS with a trusted certificate. Test both the browser and the Android app.
 - Providers rate-limit pairing and delivery; wallets bound concurrency, back off on errors and move the cursor only
   after the events are stored.
+
+### 20.11. Sharing back with a stream
+
+A stream MAY accept **feedback** from people: an assessment of one of its events, "I took part in this", or a new
+event the stream does not know yet ("I used the new road"). Nothing is sent by itself: each sending is the holder's
+own action, after the wallet has shown the stream's feedback policy, the sender form and exactly what will go. Local
+confirmations, ratings and rules never authorise sending.
+
+The descriptor announces it:
+
+```json
+"feedback": {
+  "accepts": ["assessment", "participation", "event"],
+  "senders": ["anonymous", "subscriber", "named"],
+  "moderation": "none | before | after",
+  "publishes": "no | anonymous | named | sender-choice",
+  "retentionDays": 730,
+  "rulesUrl": "https://example.org/feedback-rules" }
+```
+
+- `publishes` has the meaning of the storage policy of a card (section 3). With a fixed policy an item's `publish`
+  MUST match it and other items are refused; with `sender-choice` the item's `publish` binds the owner. Where the
+  provider also has a card, a card and a descriptor that disagree block sending. A later policy never widens what
+  was allowed for items already sent.
+- `moderation` is only about timing: `none` - published as sent; `before` - the owner approves first; `after` -
+  published at once and may be removed. It never overrides `publishes`. How the owner moderates is the owner's
+  business; the descriptor says which, and `rulesUrl` says by what rules.
+- `senders`, how a sender may appear:
+  - **anonymous** - signed by a key made for this one item. This is a pseudonym for one item, not a promise of
+    anonymity: the words, a reference to a private event or network metadata may still point to the sender, and the
+    wallet says so. The message carries no subscription proof, card, cookie or `from`;
+  - **subscriber** - signed by the subscription key (20.4). It links the item to the subscription, to the sender's
+    other feedback in this stream and to anything the provider already knows about the subscriber; the wallet says
+    so before sending;
+  - **named** - signed by the wallet identity key, with the sender's signed card.
+  The wallet offers only the forms the stream accepts and starts with the most private one.
+
+A feedback item (`schema/stream.schema.json#/$defs/feedback`) goes as an encrypted `stream-feedback` message
+(section 11) to `provider.address` through the relay, or encrypted the same way by `POST {endpoint}/feedback`:
+
+```json
+{ "kind": "stream-feedback", "version": 1, "feedbackId": "<uuid v7>",
+  "providerAddress": "vw1:...", "streamId": "...", "descriptorRev": 3,
+  "type": "assessment | participation | event",
+  "about": { "eventId": "...", "rev": 2 },
+  "event": { "action": "used", "objects": [ { "label": "the new road to Kolossi" } ],
+             "occurredAt": "2026-10-19", "place": "Kolossi" },
+  "role": "user",
+  "assessment": { "phase": "realized", "reaction": 100, "gained": ["20 minutes a day"], "lost": [],
+                  "words": "Smooth and safe, but no lighting at night", "planGap": "below-plan" },
+  "publish": "no | anonymous | named",
+  "sender": "anonymous | subscriber | named", "card": { },
+  "key": "vw1:...", "replyEncKey": { "kty": "EC" },
+  "sentAt": "...", "sig": "<the sender key over JCS without sig>" }
+```
+
+- `assessment` and `participation` need `about` (an event of the stream); `event` needs `event` and MAY carry an
+  `assessment`. `role` is the sender's role. `card` is required for, and allowed only with, `named`.
+- An assessment carries only what the holder chose: a one-tap `reaction` (section 17), words, gained and lost,
+  `planGap`, and `v` or `spentV` only if the holder ticks them. Goals, the holder's scale and other records never go.
+- Participation and new events are the sender's claims; approving them in moderation does not verify them.
+- **Receipts.** The provider answers with a signed `feedback-receipt` `{providerAddress, streamId, feedbackId,
+  itemHash, statusRev, status: "received" | "pending" | "published" | "rejected" | "withdrawn", url?, reason?}`,
+  encrypted to `replyEncKey` and, over the relay, addressed to `key`. The sender may ask `{kind: "feedback-status"}`
+  or withdraw with `{kind: "feedback-withdraw"}`, both signed by `key` over `{kind, providerAddress, streamId,
+  feedbackId, requestId}`. The wallet keeps the item key, encrypted, for as long as it keeps the item, also after
+  leaving the stream.
+- **Withdrawal** is final and may be repeated safely: the provider removes the item from everything it publishes and
+  caches, deletes it as its retention policy says, keeps only a small tombstone so the item cannot be published
+  again, and answers `withdrawn`. Copies others already made are out of its reach; the wallet says so.
+- The wallet keeps a `message-out` record for every item (`about` = the event) and its receipts, so the holder sees
+  what went to whom and its status. Items are deduplicated by `(providerAddress, streamId, key, feedbackId)`; the
+  limits of 20.5 apply. Batches are left for a later draft.
+- A provider MUST NOT make feedback a condition of anything, treat silence as an assessment, try to find out who an
+  anonymous sender is, or use persistent fingerprinting. It MAY switch anonymous feedback off, or accept it with
+  moderation, size limits, rate limits and bounded queues. A fresh key proves neither a unique person nor
+  participation, so counts of items MUST NOT be shown as counts of people, and personal `v` values MUST NOT be put on
+  a common scale or turned into scores or rankings of people.
+
+### 20.12. Your own stream
+
+A holder MAY run a stream: to publish their own assessments of events (`access: open`, `audience: public`), or to
+share events and assessments with chosen people (`access: code`, `audience: selected-readers`). Streams of providers
+that suggest events to the people who took part have `audience: participants` (the default). Being chosen as a
+reader gives access, not a role in the events: a personal stream never marks anyone `you`.
+
+- The holder's device keeps the stream's signing key and the keys to decrypt subscription requests, approves each
+  reader, and encrypts private events separately for every approved reader (bound by `recipient`, 20.5).
+- Because the wallet lives on a device, a **stream host** keeps the signed events and serves `endpoint` (the
+  institute provider MAY do this; it is optional). The host receives only the public events or the private
+  ciphertext, never wallet keys or records. Signatures show any change, but a host can still leave items out, delay
+  them or see metadata; it MUST NOT add readers, publish private content or keep more than its disclosed policy says.
+- A `named` personal stream proves who runs it: the identity key signs `{purpose: "aevri.vledger/1|stream-owner",
+  streamId, streamAddress}` and the descriptor carries that proof with the holder's card. A card alone proves nothing.
+- An event in a personal stream MAY carry the holder's `assessment` in the 20.11 form. It stays the author's
+  assessment: a reader who confirms the event does not adopt it.
+- What goes into the stream is the holder's choice, item by item. A rule ("my reactions to road works") MAY prepare
+  a list, which the holder approves before it is sent. Withdrawing follows 20.11.
+- To share one assessment with one person, the `share` message (section 11) is enough; a personal stream is for
+  sharing that continues.

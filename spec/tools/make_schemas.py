@@ -304,6 +304,47 @@ body['oneOf'] += [
         'kind': {'const': 'replay'}, 'streamId': ID, 'since': c('time')}},
 ]
 
+# Feedback and personal streams (SPEC 20.11, 20.12)
+fb_assessment = {'type': 'object', 'properties': {
+    'phase': {'enum': ['realized', 'retro']}, 'reaction': {'enum': [-100, -20, 0, 20, 100, 500]},
+    'gained': {'type': 'array', 'items': LINE}, 'lost': {'type': 'array', 'items': LINE}, 'words': {'type': 'string', 'maxLength': 2000},
+    'planGap': {'enum': ['above-plan', 'as-planned', 'below-plan', 'harm', 'unknown']}, 'v': {'type': 'number'}, 'spentV': {'type': 'number', 'minimum': 0}}}
+stream_body['properties']['audience'] = {'enum': ['participants', 'selected-readers', 'public']}
+stream_body['properties']['feedback'] = {'type': 'object', 'required': ['accepts', 'senders', 'moderation', 'publishes'], 'properties': {
+    'accepts': {'type': 'array', 'minItems': 1, 'items': {'enum': ['assessment', 'participation', 'event']}},
+    'senders': {'type': 'array', 'minItems': 1, 'items': {'enum': ['anonymous', 'subscriber', 'named']}},
+    'moderation': {'enum': ['none', 'before', 'after']}, 'publishes': {'enum': ['no', 'anonymous', 'named', 'sender-choice']},
+    'retentionDays': {'type': 'integer', 'minimum': 0}, 'rulesUrl': {'type': 'string', 'pattern': '^https://'}}}
+stream_body['properties']['owner'] = {'type': 'object', 'required': ['card', 'proof'], 'properties': {
+    'card': {'$ref': 'card.schema.json'}, 'proof': c('b64u')}, 'description': 'Named personal stream: identity key over {purpose, streamId, streamAddress}'}
+stream_event['properties']['assessment'] = fb_assessment
+feedback = {'type': 'object', 'required': ['kind', 'version', 'feedbackId', 'providerAddress', 'streamId', 'type', 'publish', 'sender', 'key', 'replyEncKey', 'sentAt', 'sig'], 'properties': {
+    'kind': {'const': 'stream-feedback'}, 'version': {'const': 1}, 'feedbackId': ID, 'providerAddress': c('address'), 'streamId': ID,
+    'descriptorRev': {'type': 'integer', 'minimum': 1}, 'type': {'enum': ['assessment', 'participation', 'event']},
+    'about': {'type': 'object', 'required': ['eventId'], 'properties': {'eventId': {'type': 'string', 'maxLength': 100}, 'rev': {'type': 'integer', 'minimum': 1}}},
+    'event': {'type': 'object', 'required': ['action'], 'properties': {'action': LINE,
+        'objects': {'type': 'array', 'maxItems': 100, 'items': {'type': 'object', 'required': ['label'], 'properties': {'label': LINE}}},
+        'occurredAt': {'oneOf': [c('time'), c('date')]}, 'place': LINE}},
+    'role': {'enum': ['actor', 'affected', 'user', 'witness']}, 'assessment': fb_assessment,
+    'publish': {'enum': ['no', 'anonymous', 'named']}, 'sender': {'enum': ['anonymous', 'subscriber', 'named']},
+    'card': {'$ref': 'card.schema.json'}, 'key': c('address'), 'replyEncKey': c('ecJwk'), 'sentAt': c('time'), 'sig': c('b64u')},
+    'allOf': [
+        {'if': {'properties': {'type': {'enum': ['assessment', 'participation']}}}, 'then': {'required': ['about']}},
+        {'if': {'properties': {'type': {'const': 'event'}}}, 'then': {'required': ['event']}},
+        {'if': {'properties': {'type': {'const': 'assessment'}}}, 'then': {'required': ['assessment']}},
+        {'if': {'properties': {'sender': {'const': 'named'}}}, 'then': {'required': ['card']}, 'else': {'not': {'required': ['card']}}}]}
+receipt_fb = {'type': 'object', 'required': ['kind', 'providerAddress', 'streamId', 'feedbackId', 'itemHash', 'statusRev', 'status', 'sig'], 'properties': {
+    'kind': {'const': 'feedback-receipt'}, 'providerAddress': c('address'), 'streamId': ID, 'feedbackId': ID, 'itemHash': c('sha256'),
+    'statusRev': {'type': 'integer', 'minimum': 1}, 'status': {'enum': ['received', 'pending', 'published', 'rejected', 'withdrawn']},
+    'url': {'type': 'string', 'pattern': '^https://'}, 'reason': TEXT, 'sig': c('b64u')}}
+fb_control = lambda k: {'type': 'object', 'required': ['kind', 'providerAddress', 'streamId', 'feedbackId', 'requestId', 'sig'], 'properties': {
+    'kind': {'const': k}, 'providerAddress': c('address'), 'streamId': ID, 'feedbackId': ID, 'requestId': ID, 'sig': c('b64u')}}
+stream['$defs'].update({'feedback': feedback, 'feedbackReceipt': receipt_fb, 'feedbackAssessment': fb_assessment})
+FB_KINDS = ['stream-feedback', 'feedback-receipt', 'feedback-status', 'feedback-withdraw']
+defs['messageOut']['properties']['kind']['enum'] += FB_KINDS
+body['oneOf'] += [{'$ref': 'stream.schema.json#/$defs/feedback'}, {'$ref': 'stream.schema.json#/$defs/feedbackReceipt'},
+                  fb_control('feedback-status'), fb_control('feedback-withdraw')]
+
 for name, doc in [('payload', payload), ('receipt', receipt), ('card', card), ('message', message), ('registry', registry), ('bridge', bridge), ('stream', stream)]:
     (OUT / (name + '.schema.json')).write_text(json.dumps(doc, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     print('wrote', name)
