@@ -72,7 +72,8 @@
         "access": {
           "enum": [
             "open",
-            "code"
+            "code",
+            "attested"
           ]
         },
         "transport": {
@@ -197,6 +198,23 @@
             "rulesUrl": {
               "type": "string",
               "pattern": "^https://"
+            },
+            "requires": {
+              "type": "object",
+              "required": [
+                "issuer",
+                "claim"
+              ],
+              "properties": {
+                "issuer": {
+                  "$ref": "common.schema.json#/$defs/address"
+                },
+                "claim": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]*(:[A-Za-z0-9._-]{1,80})?$",
+                  "maxLength": 100
+                }
+              }
             }
           }
         },
@@ -215,6 +233,23 @@
             }
           },
           "description": "Named personal stream: identity key over {purpose, streamId, streamAddress}"
+        },
+        "requires": {
+          "type": "object",
+          "required": [
+            "issuer",
+            "claim"
+          ],
+          "properties": {
+            "issuer": {
+              "$ref": "common.schema.json#/$defs/address"
+            },
+            "claim": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]*(:[A-Za-z0-9._-]{1,80})?$",
+              "maxLength": 100
+            }
+          }
         }
       },
       "allOf": [
@@ -248,6 +283,20 @@
                 "const": "holder"
               }
             }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "access": {
+                "const": "attested"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "requires"
+            ]
           }
         }
       ]
@@ -722,6 +771,14 @@
         },
         "sig": {
           "$ref": "common.schema.json#/$defs/b64u"
+        },
+        "attestations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "$ref": "stream.schema.json#/$defs/attestation"
+          }
         }
       },
       "allOf": [
@@ -896,6 +953,91 @@
         "spentV": {
           "type": "number",
           "minimum": 0
+        }
+      }
+    },
+    "attestation": {
+      "type": "object",
+      "required": [
+        "attestation",
+        "sig"
+      ],
+      "properties": {
+        "attestation": {
+          "type": "object",
+          "required": [
+            "type",
+            "version",
+            "issuer",
+            "subject",
+            "claim",
+            "audience",
+            "issuedAt",
+            "expiresAt"
+          ],
+          "properties": {
+            "type": {
+              "const": "aevri.vledger.attestation"
+            },
+            "version": {
+              "const": 1
+            },
+            "issuer": {
+              "$ref": "common.schema.json#/$defs/address"
+            },
+            "issuerName": {
+              "$ref": "common.schema.json#/$defs/line"
+            },
+            "subject": {
+              "$ref": "common.schema.json#/$defs/address"
+            },
+            "claim": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]*(:[A-Za-z0-9._-]{1,80})?$",
+              "maxLength": 100
+            },
+            "audience": {
+              "type": "object",
+              "required": [
+                "providerAddress",
+                "streamId"
+              ],
+              "properties": {
+                "providerAddress": {
+                  "$ref": "common.schema.json#/$defs/address"
+                },
+                "streamId": {
+                  "$ref": "common.schema.json#/$defs/uuid"
+                }
+              }
+            },
+            "issuedAt": {
+              "$ref": "common.schema.json#/$defs/time"
+            },
+            "expiresAt": {
+              "$ref": "common.schema.json#/$defs/time"
+            }
+          }
+        },
+        "sig": {
+          "$ref": "common.schema.json#/$defs/b64u"
+        }
+      }
+    },
+    "requires": {
+      "type": "object",
+      "required": [
+        "issuer",
+        "claim"
+      ],
+      "properties": {
+        "issuer": {
+          "$ref": "common.schema.json#/$defs/address"
+        },
+        "claim": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*(:[A-Za-z0-9._-]{1,80})?$",
+          "maxLength": 100
         }
       }
     }
