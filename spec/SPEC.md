@@ -1,12 +1,13 @@
 # Value Wallet format and protocols - `aevri.vledger` 1.0
 
-Status: **draft 1.0-d8** (2026-10-18). Editor: Aeilus Value Research Institute (ÆVRI).
+Status: **draft 1.0-d9** (2026-10-19). Editor: Aeilus Value Research Institute (ÆVRI).
 Licence: CC BY 4.0 (this text), MIT (reference code and schemas). Requirements (Russian): TZ v0.2 and v0.3.
 Fixtures in `fixtures/` are produced by `reference/` (Web Crypto) and pass the independent `tools/verify_fixtures.py`.
+Changes from d8: event streams (section 20): providers suggest events to the people who took part,
+connected by a QR code or a link; `stream` records, `streamRef`, `schema/stream.schema.json`.
 Changes from d7: spheres link VSS schemas and show them as a map (section 19).
 Changes from d6: unlock with device biometrics (section 18), kept on the device, outside the wallet document.
-Changes from d5: one-click `reaction` in assessments (section 17); `registrySystemId` in value systems.
-Changes from d5: one-click `reaction` in assessments (section 17); `registrySystemId` in value systems.
+Changes from d6: one-click `reaction` in assessments (section 17); `registrySystemId` in value systems.
 Changes from d4 (stage L4): bridges to VET and VSS (section 16, `schema/bridge.schema.json`); `event.vssRef`;
 the `vet` result in assessments; `settings.bridges`.
 Changes from d3 (stage L3): `opening` in event offers; the optional card directory of relays; the institute relay
@@ -119,7 +120,7 @@ The chain is for the holder's own integrity, not a proof to others.
 ### 5.2. Payload
 
 `{kind, createdAt, supersedes, source, body, retainUntil?}`. `source` is one of `manual`, `import-file`, `contact`,
-`registry`, `message`, `device`, `agent`, `vet`, `vss`, `aevri.site`, `aevri.vvp`.
+`registry`, `message`, `device`, `agent`, `vet`, `vss`, `aevri.site`, `aevri.vvp`, `stream`.
 
 ### 5.3. Kinds
 
@@ -277,6 +278,7 @@ assessments with `owner`. A registry MUST NOT make an assessment a condition of 
 A device or agent proposes events with a `suggestion` message or an import file. The wallet stores them with
 `status: suggested` and `suggestedBy` = the device's contact, and shows them in the inbox until the holder confirms or
 rejects each. Raw recordings stay with the device; the wallet keeps the event text and a source reference only.
+A provider that offers events continuously does so as an event stream (section 20).
 
 ## 14. Analytics
 
@@ -356,14 +358,6 @@ estimate shown as "≈"; it is never written into `v`, which stays the goal valu
 relative ("about twice X"). A value system made from a registry keeps
 `registryUrl` and `registrySystemId`, one per system of that registry.
 
-## 17. One-click reactions (d6)
-
-An assessment MAY carry `reaction`, one of -100, -20, 0, 20, 100, 500 (harmed me, lost my time, neutral,
-interesting, hooked, I will apply it): the scale readers use on the institute site. A reaction alone is a complete
-assessment; it is not converted into `v`. When the holder has goals, a wallet SHOULD offer to calibrate reaction-only
-assessments by adding `contributions`, which then give `v` as usual. A value system made from a registry keeps
-`registryUrl` and `registrySystemId`, one per system of that registry.
-
 ## 18. Unlock with device biometrics (d7)
 
 A wallet MAY open on one device without the passphrase, by the device's own biometrics or PIN, using a WebAuthn
@@ -381,3 +375,202 @@ A value system (sphere) MAY link VSS schemas: `vss: [{schemaId, title, holderNod
 schema document (`aevri.vss`) is kept as an `import` record with `originId` `vss:<schemaId>`, so the map works
 offline and from a file. The map of a sphere shows the holder node and its neighbours; a flow counts the events of
 the sphere whose `vssRef.flowId` is that flow; flows without events are shown as expected, not as zero value.
+
+## 20. Event streams (d9)
+
+An **event stream** is a source that notices events and offers them to the people who took part: a "second brain"
+that transcribes the holder's meetings and calls, a calendar, a smart home, an employer's task tracker, a city's road
+works, the institute's publications. The service or device behind it is the **stream provider**; a wallet that
+connected to it is a **subscriber**. Reviewed with Codex and Grok Heavy (`docs/VLEDGER/streams/`).
+
+### 20.1. The main rule
+
+A provider only **suggests**. Every event lands in the wallet as `status: suggested` (section 13) and reaches the
+timeline only when the holder confirms it, one by one or by a rule the holder made (20.7). The provider never writes into a wallet, never reads it, and learns
+nothing about what the holder did with an event: no confirmations, rejections, reactions or assessments go back.
+
+Providers and relays can still see connection and delivery metadata (addresses, times, sizes). Per-stream keys
+(20.4) keep two providers from linking one holder by key, but they do not hide an identity a provider already knows
+from its own accounts, voices or devices. Providers MUST NOT correlate subscriptions or profile holders.
+
+### 20.2. The stream descriptor
+
+A provider describes a stream with a signed descriptor (`schema/stream.schema.json`):
+
+```json
+{ "stream": {
+    "type": "aevri.vledger.stream", "version": 1, "descriptorRev": 1,
+    "streamId": "<uuid v7>", "title": "2dBrain: my meetings and calls",
+    "provider": { "name": "2dBrain", "kind": "device", "address": "vw1:...",
+                  "encKey": { "kty": "EC", "crv": "P-256", "x": "...", "y": "..." } },
+    "access": "open | code",
+    "transport": ["https", "relay"],
+    "endpoint": "https://example.org/vledger-stream/v1",
+    "relay": "https://aeilus.institute/api/v1/vledger/relay",
+    "identifies": "provider | holder",
+    "eventKinds": ["meeting", "call", "message", "task", "visit", "publication", "other"],
+    "policy": { "keeps": "events and transcripts, on the provider's own machine", "retentionDays": 365,
+                "deletesOnLeave": true, "rawStays": true, "url": "https://example.org/privacy" },
+    "updatedAt": "2026-10-19T09:00:00Z" },
+  "sig": "<provider identity key over JCS of stream>" }
+```
+
+- `provider.address` (section 3) names the provider key; it signs the descriptor and every event. `encKey` receives
+  encrypted messages from subscribers.
+- `access`: `open` - anyone may read, events are the same for everyone, signed but not encrypted (a city, a newsroom,
+  the institute's publications); `code` - private: a one-time **pairing code** is shown on a screen only the
+  provider's owner sees (an app on the holder's phone, an admin page inside a home network or VPN). A provider MAY
+  protect that screen with its own login; the wallet never sees it. `account` (sign in at the provider and come back
+  with a code) is reserved for a later draft.
+- `transport`: `https` - the wallet pulls from `endpoint`; `relay` - provider and wallet exchange encrypted messages
+  (section 11) through `relay`, so a provider at home needs no inbound port and the wallet page no direct connection.
+  A provider MUST offer at least one. Using a relay is disclosed to the holder before connecting; a stream that must
+  stay inside a private network uses `https` only, with a TLS certificate the holder's browser trusts.
+- `identifies`: `provider` - the provider knows which participant is the subscriber and marks it; `holder` - it does
+  not, and the holder finds themself in the wallet (20.6). Open streams use `holder`.
+- Names and policies are the provider's claims. The wallet shows them as such, with the descriptor's origin and the
+  key fingerprint, and pins the provider address and `streamId` it connected to. A descriptor with a different key
+  needs a new connection; a higher `descriptorRev` that changes the endpoint, relay, access or policy needs the
+  holder's approval; a lower `descriptorRev` is ignored.
+
+### 20.3. Connecting: a QR code or a link
+
+```
+https://aeilus.institute/tools/vledger/#stream=<descriptor URL>&code=<pairing code>
+https://aeilus.institute/tools/vledger/#stream=vw1:<provider address>&code=<pairing code>&relay=<relay URL>
+```
+
+The first form names a descriptor at an HTTPS URL (CORS open to the wallet origin). The second serves providers
+reachable only through a relay: the wallet takes the provider's card from the relay's card directory (section 11),
+and the provider sends the descriptor in its `subscribed` reply. `relay` defaults to the institute relay. Parameters
+are percent-encoded and travel in the fragment, so they never reach a web server; `/w/` links work the same way. A
+QR code holds the same link. A wallet MUST also accept the link pasted as text.
+
+The wallet then:
+
+1. fetches and verifies the descriptor (or the card), and removes the pairing code from the address bar and history;
+2. shows what will happen: title, provider and fingerprint, what kinds of events it suggests, how it identifies the
+   holder, its policy, the transport (and that a relay sees delivery times), and "nothing goes back";
+3. on the holder's tap **Connect**, creates a **subscription key pair** for this stream on this device (Ed25519 to
+   sign, P-256 to receive) and subscribes (20.4).
+
+Nothing is connected without that tap.
+
+### 20.4. Subscribing
+
+Open streams need no subscription: the wallet only pulls. For `code` streams:
+
+- The wallet sends `{kind: "subscribe", streamId, code, subscriber: {address, encKey}, proof}`, where `address` is
+  the `vw1:` form of the subscription key and `proof` is its signature over the JCS form of
+  `{purpose: "aevri.vledger/1|subscribe", providerAddress, streamId, code, subscriber}`. Over `https`:
+  `POST {endpoint}/subscriptions`; over the relay: an encrypted message (section 11) to `provider.address`.
+- The provider checks the code (at least 128 random bits, at most 10 minutes old, used once, consumed atomically),
+  then shows the first 8 characters of the subscription key fingerprint on its own screen; the wallet shows the same
+  8 characters. The owner approves on the provider side if they match. The answer is
+  `{kind: "subscribed", streamId, subscriptionId, descriptor?}`; a repeated identical request returns the same answer.
+- The provider binds the subscription to what the pairing screen belongs to (its owner, a participant). It MUST NOT
+  ask for, accept or store the holder's main wallet address, name, contacts or anything from the wallet.
+- Subscription keys stay on the device where they were made, in encrypted device-local storage, outside the wallet
+  document (like section 18): they are never synced or exported. Another device of the same holder connects to
+  an open stream by itself and to a private stream with its own pairing. The stream record itself (20.8) is synced, so all devices know the stream and
+  which events were already handled.
+
+### 20.5. Events
+
+```json
+{ "type": "aevri.vledger.stream-event", "version": 1,
+  "streamId": "...", "eventId": "<provider's stable id>", "rev": 1, "recipient": "vw1:<subscription address>",
+  "occurredAt": "2026-10-19T09:30:00Z", "approx": false, "until": "2026-10-19T10:15:00Z",
+  "kind": "meeting",
+  "actor": { "ref": "p1", "label": "Anna" },
+  "action": "agreed the pilot plan",
+  "objects": [ { "label": "pilot plan for Q4", "type": "decision" } ],
+  "participants": [ { "ref": "p1", "label": "Anna", "role": "actor" },
+                    { "ref": "p2", "label": "Victor", "role": "affected", "you": true } ],
+  "summary": "Short text, at most 1000 characters",
+  "source": { "label": "Call recording, 19 Oct", "url": "https://..." },
+  "confidence": 0.8, "withdrawn": false,
+  "sig": "<provider key over JCS without sig>" }
+```
+
+- `ref` is an opaque participant id, stable inside the stream and never reused for someone else. `you: true` appears
+  only in private streams with `identifies: provider`, on exactly one participant; `recipient` is required there and
+  is absent in open streams. Object `type` is a label, not the holder's element type.
+- `rev` is a positive integer that grows with every correction; `withdrawn: true` (at a higher `rev`) takes the event
+  back.
+- Raw recordings, transcripts and media stay with the provider (section 13). An event carries words and at most a
+  link back.
+- **Pull** (`https`): `GET {endpoint}/events?after=<cursor>` answers `{events, cursor}` with at most 100 events.
+  Private streams prove the subscription: `GET {endpoint}/challenge` gives a one-time challenge (5 minutes), and the
+  request carries `X-Vledger-Address`, `X-Vledger-Challenge` and `X-Vledger-Proof`, a signature by the subscription
+  key over the JCS form of `{purpose: "aevri.vledger/1|stream-request", challenge, method, pathAndQuery, streamId,
+  subscriptionId}`. Private events come as messages (section 11) encrypted to the subscription `encKey`. Requests
+  omit cookies.
+- **Push** (`relay`): the provider sends `{kind: "stream-events", events: [...]}` messages to the subscription
+  address. A relay deletes a message once it is fetched and after 14 days at most, so delivery is best effort: the
+  provider keeps its events and resends them when the wallet asks with `{kind: "replay", streamId, since}`.
+- Limits for the pilot: descriptor 16 KiB, event 32 KiB, response 1 MiB, JSON depth 16, 100 participants and 100
+  objects per event; at most 1 000 pending suggestions per stream (beyond that the wallet pauses the stream and says
+  so).
+
+### 20.6. Finding yourself
+
+- `identifies: provider`: the participant with `you: true` gives the holder's role (`actor`, `affected`, `user`,
+  `witness`). A private stream sends only events in which the subscriber took part.
+- `identifies: holder` (open streams): the provider sends the events meant for everyone and the wallet matches them
+  locally and ignores any `you` flag. When an event lists participants, the wallet asks once "Which of these is you?" and remembers the answer
+  for that `ref`; events without the holder can still be kept as "I was there" or "it affects me" by the holder's
+  choice. The provider is never told.
+- Other participants are mapped to the holder's contacts by the holder ("Anna in 2dBrain is my contact Anna"); an
+  unmapped actor is resolved before the event is confirmed. The map stays in the wallet.
+
+### 20.7. Review, rules and corrections
+
+1. The wallet verifies the signature against the pinned key and drops anything else, including events for another
+   `recipient`.
+2. It keeps one state per `(provider address, streamId, eventId)`: a lower or equal `rev` is ignored (different
+   content at the same `rev` is set aside as suspicious); a higher `rev` replaces a pending suggestion; for a
+   confirmed event the wallet only says "the provider corrected this" and the holder may accept the change as a
+   correction (section 6). A withdrawal removes a pending suggestion and flags a confirmed event, never deleting the
+   holder's record. Rejections are remembered, so a correction never brings a rejected event back.
+3. A suggestion is stored with `source: "stream"`, `suggestedBy` = the provider's contact and
+   `streamRef = {provider, streamId, eventId, rev}`. The review queue groups suggestions by stream, day and
+   participant and offers **Confirm**, **Confirm and rate** (section 17) and **Reject**, one at a time or for a group.
+4. **Rules.** The holder MAY create a rule from events they confirmed by hand ("always confirm 2dBrain calls with Anna").
+   Rules live in the wallet, are made only by the holder, only confirm (they never rate), mark what they confirmed as
+   "by rule", are listed in a short daily summary, and can be undone in one tap for everything they did. Nothing about rules leaves the wallet.
+
+### 20.8. The stream record, pausing and leaving
+
+A payload kind `stream`: `{providerAddress, streamId, descriptorUrl?, descriptor (signed, as received),
+subscriptionId?, cursor?, selfRefs[], contactMap[], rules[], handled[] ({eventId, rev, state}), paused, addedAt}`.
+Subscription keys are not in it (20.4).
+
+- **Pause** stops taking in events on all devices; the provider may still send.
+- **Leave**: `DELETE {endpoint}/subscriptions/{subscriptionId}` with the subscription proof, or an `unsubscribe`
+  message by relay. The provider MUST stop sending and, when its policy says `deletesOnLeave`, delete what it keeps
+  for that subscription, then answer `unsubscribed`, signed with its key, as a receipt. Until that answer comes, the wallet shows the leave as pending
+  and keeps retrying; the holder may also forget the stream at once. Events already confirmed stay in the wallet.
+
+### 20.9. What a provider promises
+
+A conforming provider:
+
+1. signs the descriptor and every event with one key and states its policy in the descriptor;
+2. sends private subscribers only events in which they took part, and open streams only events meant for everyone;
+3. never asks for the holder's main address, contacts, assessments or anything else from the wallet, and never makes
+   an assessment a condition of anything (as registries, section 12);
+4. keeps raw recordings to itself and sends words, not media;
+5. does not correlate subscriptions or profile holders, and keeps no more delivery data than it needs;
+6. stops at Leave and keeps its deletion promise.
+
+### 20.10. Security
+
+- Text in descriptors and events is untrusted: a wallet shows it as text, never as markup, never follows
+  instructions in it and never prefetches links; it opens an `https` source link only on the holder's tap, showing
+  the destination, without referrer or opener.
+- Pairing codes stay in memory: the wallet clears them from the address bar and history and never logs them.
+- A web page served over HTTPS cannot reliably reach plain `http` addresses in a home network; home providers use the
+  relay or HTTPS with a trusted certificate. Test both the browser and the Android app.
+- Providers rate-limit pairing and delivery; wallets bound concurrency, back off on errors and move the cursor only
+  after the events are stored.

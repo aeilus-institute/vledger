@@ -395,6 +395,147 @@
               }
             }
           }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "streamId",
+            "code",
+            "subscriber",
+            "proof"
+          ],
+          "properties": {
+            "kind": {
+              "const": "subscribe"
+            },
+            "streamId": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "code": {
+              "type": "string",
+              "minLength": 22,
+              "maxLength": 100
+            },
+            "subscriber": {
+              "$ref": "stream.schema.json#/$defs/subscriber"
+            },
+            "proof": {
+              "$ref": "common.schema.json#/$defs/b64u"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "streamId",
+            "subscriptionId"
+          ],
+          "properties": {
+            "kind": {
+              "const": "subscribed"
+            },
+            "streamId": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "subscriptionId": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "descriptor": {
+              "$ref": "stream.schema.json"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "streamId",
+            "subscriptionId"
+          ],
+          "properties": {
+            "kind": {
+              "const": "unsubscribe"
+            },
+            "streamId": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "subscriptionId": {
+              "type": "string",
+              "maxLength": 100
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "streamId",
+            "subscriptionId",
+            "deleted",
+            "sig"
+          ],
+          "properties": {
+            "kind": {
+              "const": "unsubscribed"
+            },
+            "streamId": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "subscriptionId": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "deleted": {
+              "type": "boolean"
+            },
+            "at": {
+              "$ref": "common.schema.json#/$defs/time"
+            },
+            "sig": {
+              "$ref": "common.schema.json#/$defs/b64u"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "events"
+          ],
+          "properties": {
+            "kind": {
+              "const": "stream-events"
+            },
+            "events": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 100,
+              "items": {
+                "$ref": "stream.schema.json#/$defs/streamEvent"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "streamId"
+          ],
+          "properties": {
+            "kind": {
+              "const": "replay"
+            },
+            "streamId": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "since": {
+              "$ref": "common.schema.json#/$defs/time"
+            }
+          }
         }
       ]
     }

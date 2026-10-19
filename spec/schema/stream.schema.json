@@ -1,0 +1,407 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aeilus.institute/schema/vledger/1/stream.schema.json",
+  "title": "aevri.vledger 1.0-d9 event streams (SPEC 20)",
+  "type": "object",
+  "required": [
+    "stream",
+    "sig"
+  ],
+  "properties": {
+    "stream": {
+      "type": "object",
+      "required": [
+        "type",
+        "version",
+        "descriptorRev",
+        "streamId",
+        "title",
+        "provider",
+        "access",
+        "transport",
+        "identifies",
+        "policy",
+        "updatedAt"
+      ],
+      "properties": {
+        "type": {
+          "const": "aevri.vledger.stream"
+        },
+        "version": {
+          "const": 1
+        },
+        "descriptorRev": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "streamId": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "title": {
+          "$ref": "common.schema.json#/$defs/line"
+        },
+        "provider": {
+          "type": "object",
+          "required": [
+            "name",
+            "address",
+            "encKey"
+          ],
+          "properties": {
+            "name": {
+              "$ref": "common.schema.json#/$defs/line"
+            },
+            "kind": {
+              "enum": [
+                "person",
+                "organization",
+                "state",
+                "group",
+                "device",
+                "agent"
+              ]
+            },
+            "address": {
+              "$ref": "common.schema.json#/$defs/address"
+            },
+            "encKey": {
+              "$ref": "common.schema.json#/$defs/ecJwk"
+            }
+          }
+        },
+        "access": {
+          "enum": [
+            "open",
+            "code"
+          ]
+        },
+        "transport": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "https",
+              "relay"
+            ]
+          }
+        },
+        "endpoint": {
+          "type": "string",
+          "pattern": "^https://"
+        },
+        "relay": {
+          "type": "string",
+          "pattern": "^https://"
+        },
+        "identifies": {
+          "enum": [
+            "provider",
+            "holder"
+          ]
+        },
+        "eventKinds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 40
+          }
+        },
+        "policy": {
+          "type": "object",
+          "required": [
+            "keeps",
+            "deletesOnLeave",
+            "rawStays"
+          ],
+          "properties": {
+            "keeps": {
+              "$ref": "common.schema.json#/$defs/text"
+            },
+            "retentionDays": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "deletesOnLeave": {
+              "type": "boolean"
+            },
+            "rawStays": {
+              "type": "boolean"
+            },
+            "url": {
+              "type": "string",
+              "pattern": "^https://"
+            }
+          }
+        },
+        "updatedAt": {
+          "$ref": "common.schema.json#/$defs/time"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "transport": {
+                "contains": {
+                  "const": "https"
+                }
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "endpoint"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "access": {
+                "const": "open"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "identifies": {
+                "const": "holder"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "sig": {
+      "$ref": "common.schema.json#/$defs/b64u"
+    }
+  },
+  "$defs": {
+    "streamEvent": {
+      "type": "object",
+      "required": [
+        "type",
+        "version",
+        "streamId",
+        "eventId",
+        "rev",
+        "occurredAt",
+        "actor",
+        "action",
+        "sig"
+      ],
+      "properties": {
+        "type": {
+          "const": "aevri.vledger.stream-event"
+        },
+        "version": {
+          "const": 1
+        },
+        "streamId": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "eventId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._:-]{1,100}$"
+        },
+        "rev": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "recipient": {
+          "$ref": "common.schema.json#/$defs/address"
+        },
+        "occurredAt": {
+          "oneOf": [
+            {
+              "$ref": "common.schema.json#/$defs/time"
+            },
+            {
+              "$ref": "common.schema.json#/$defs/date"
+            }
+          ]
+        },
+        "approx": {
+          "type": "boolean"
+        },
+        "until": {
+          "$ref": "common.schema.json#/$defs/time"
+        },
+        "kind": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "actor": {
+          "type": "object",
+          "required": [
+            "label"
+          ],
+          "properties": {
+            "ref": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "label": {
+              "$ref": "common.schema.json#/$defs/line"
+            }
+          }
+        },
+        "action": {
+          "$ref": "common.schema.json#/$defs/line"
+        },
+        "objects": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "required": [
+              "label"
+            ],
+            "properties": {
+              "label": {
+                "$ref": "common.schema.json#/$defs/line"
+              },
+              "type": {
+                "type": "string",
+                "maxLength": 40
+              },
+              "quantity": {
+                "type": "number"
+              },
+              "unit": {
+                "type": "string",
+                "maxLength": 40
+              }
+            }
+          }
+        },
+        "participants": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "required": [
+              "ref",
+              "label"
+            ],
+            "properties": {
+              "ref": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "label": {
+                "$ref": "common.schema.json#/$defs/line"
+              },
+              "role": {
+                "enum": [
+                  "actor",
+                  "affected",
+                  "user",
+                  "witness"
+                ]
+              },
+              "you": {
+                "const": true
+              }
+            }
+          }
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "source": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "$ref": "common.schema.json#/$defs/line"
+            },
+            "url": {
+              "type": "string",
+              "pattern": "^https://"
+            }
+          }
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "withdrawn": {
+          "type": "boolean"
+        },
+        "sig": {
+          "$ref": "common.schema.json#/$defs/b64u"
+        }
+      }
+    },
+    "streamRef": {
+      "type": "object",
+      "required": [
+        "provider",
+        "streamId",
+        "eventId",
+        "rev"
+      ],
+      "properties": {
+        "provider": {
+          "$ref": "common.schema.json#/$defs/address"
+        },
+        "streamId": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "eventId": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "rev": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "participant": {
+      "type": "object",
+      "required": [
+        "ref",
+        "label"
+      ],
+      "properties": {
+        "ref": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "label": {
+          "$ref": "common.schema.json#/$defs/line"
+        },
+        "role": {
+          "enum": [
+            "actor",
+            "affected",
+            "user",
+            "witness"
+          ]
+        },
+        "you": {
+          "const": true
+        }
+      }
+    },
+    "subscriber": {
+      "type": "object",
+      "required": [
+        "address",
+        "encKey"
+      ],
+      "properties": {
+        "address": {
+          "$ref": "common.schema.json#/$defs/address"
+        },
+        "encKey": {
+          "$ref": "common.schema.json#/$defs/ecJwk"
+        }
+      }
+    }
+  }
+}

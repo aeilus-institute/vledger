@@ -229,6 +229,81 @@ bridge = {
     },
 }
 
-for name, doc in [('payload', payload), ('receipt', receipt), ('card', card), ('message', message), ('registry', registry), ('bridge', bridge)]:
+# Event streams (SPEC 20, d9)
+REF = {'type': 'string', 'maxLength': 100}
+participant = {'type': 'object', 'required': ['ref', 'label'], 'properties': {
+    'ref': REF, 'label': LINE, 'role': {'enum': ['actor', 'affected', 'user', 'witness']}, 'you': {'const': True}}}
+stream_body = {'type': 'object', 'required': ['type', 'version', 'descriptorRev', 'streamId', 'title', 'provider', 'access', 'transport', 'identifies', 'policy', 'updatedAt'], 'properties': {
+    'type': {'const': 'aevri.vledger.stream'}, 'version': {'const': 1}, 'descriptorRev': {'type': 'integer', 'minimum': 1},
+    'streamId': ID, 'title': LINE,
+    'provider': {'type': 'object', 'required': ['name', 'address', 'encKey'], 'properties': {
+        'name': LINE, 'kind': {'enum': ['person', 'organization', 'state', 'group', 'device', 'agent']}, 'address': c('address'), 'encKey': c('ecJwk')}},
+    'access': {'enum': ['open', 'code']},
+    'transport': {'type': 'array', 'minItems': 1, 'uniqueItems': True, 'items': {'enum': ['https', 'relay']}},
+    'endpoint': {'type': 'string', 'pattern': '^https://'}, 'relay': {'type': 'string', 'pattern': '^https://'},
+    'identifies': {'enum': ['provider', 'holder']},
+    'eventKinds': {'type': 'array', 'items': {'type': 'string', 'maxLength': 40}},
+    'policy': {'type': 'object', 'required': ['keeps', 'deletesOnLeave', 'rawStays'], 'properties': {
+        'keeps': TEXT, 'retentionDays': {'type': 'integer', 'minimum': 0}, 'deletesOnLeave': {'type': 'boolean'},
+        'rawStays': {'type': 'boolean'}, 'url': {'type': 'string', 'pattern': '^https://'}}},
+    'updatedAt': c('time')},
+    'allOf': [{'if': {'properties': {'transport': {'contains': {'const': 'https'}}}}, 'then': {'required': ['endpoint']}},
+              {'if': {'properties': {'access': {'const': 'open'}}}, 'then': {'properties': {'identifies': {'const': 'holder'}}}}]}
+stream_event = {'type': 'object', 'required': ['type', 'version', 'streamId', 'eventId', 'rev', 'occurredAt', 'actor', 'action', 'sig'], 'properties': {
+    'type': {'const': 'aevri.vledger.stream-event'}, 'version': {'const': 1}, 'streamId': ID,
+    'eventId': {'type': 'string', 'pattern': '^[A-Za-z0-9._:-]{1,100}$'}, 'rev': {'type': 'integer', 'minimum': 1},
+    'recipient': c('address'), 'occurredAt': {'oneOf': [c('time'), c('date')]}, 'approx': {'type': 'boolean'}, 'until': c('time'),
+    'kind': {'type': 'string', 'maxLength': 40},
+    'actor': {'type': 'object', 'required': ['label'], 'properties': {'ref': REF, 'label': LINE}},
+    'action': LINE,
+    'objects': {'type': 'array', 'maxItems': 100, 'items': {'type': 'object', 'required': ['label'], 'properties': {
+        'label': LINE, 'type': {'type': 'string', 'maxLength': 40}, 'quantity': {'type': 'number'}, 'unit': {'type': 'string', 'maxLength': 40}}}},
+    'participants': {'type': 'array', 'maxItems': 100, 'items': participant},
+    'summary': {'type': 'string', 'maxLength': 1000},
+    'source': {'type': 'object', 'properties': {'label': LINE, 'url': {'type': 'string', 'pattern': '^https://'}}},
+    'confidence': {'type': 'number', 'minimum': 0, 'maximum': 1}, 'withdrawn': {'type': 'boolean'}, 'sig': c('b64u')}}
+stream_ref = {'type': 'object', 'required': ['provider', 'streamId', 'eventId', 'rev'], 'properties': {
+    'provider': c('address'), 'streamId': ID, 'eventId': {'type': 'string', 'maxLength': 100}, 'rev': {'type': 'integer', 'minimum': 1}}}
+subscriber = {'type': 'object', 'required': ['address', 'encKey'], 'properties': {'address': c('address'), 'encKey': c('ecJwk')}}
+stream = {
+    '$schema': S, '$id': B + 'stream.schema.json', 'title': 'aevri.vledger 1.0-d9 event streams (SPEC 20)',
+    'type': 'object', 'required': ['stream', 'sig'], 'properties': {'stream': stream_body, 'sig': c('b64u')},
+    '$defs': {'streamEvent': stream_event, 'streamRef': stream_ref, 'participant': participant, 'subscriber': subscriber},
+}
+defs['event']['properties']['streamRef'] = {'$ref': 'stream.schema.json#/$defs/streamRef'}
+defs['stream'] = {'type': 'object', 'required': ['providerAddress', 'streamId', 'descriptor', 'addedAt'], 'properties': {
+    'providerAddress': c('address'), 'streamId': ID, 'descriptorUrl': {'type': 'string', 'pattern': '^https://'},
+    'descriptor': {'$ref': 'stream.schema.json'}, 'subscriptionId': {'type': 'string', 'maxLength': 100}, 'cursor': {'type': 'string', 'maxLength': 500},
+    'selfRefs': {'type': 'array', 'items': REF},
+    'contactMap': {'type': 'array', 'items': {'type': 'object', 'required': ['ref', 'contactId'], 'properties': {'ref': REF, 'contactId': ID}}},
+    'rules': {'type': 'array', 'items': {'type': 'object', 'required': ['id', 'match'], 'properties': {
+        'id': ID, 'match': {'type': 'object', 'properties': {'kind': {'type': 'string'}, 'participantRef': REF, 'actorRef': REF}}, 'createdAt': c('time')}}},
+    'handled': {'type': 'array', 'items': {'type': 'object', 'required': ['eventId', 'rev', 'state'], 'properties': {
+        'eventId': {'type': 'string', 'maxLength': 100}, 'rev': {'type': 'integer', 'minimum': 1}, 'state': {'enum': ['confirmed', 'rejected', 'withdrawn']}}}},
+    'paused': {'type': 'boolean'}, 'leaving': {'type': 'boolean'}, 'addedAt': c('time')}}
+KIND_DEF['stream'] = 'stream'
+payload['properties']['kind'] = {'enum': list(KIND_DEF)}
+payload['properties']['source']['enum'].append('stream')
+payload['else'] = {'allOf': [{'if': {'properties': {'kind': {'const': k}}}, 'then': {'properties': {'body': {'$ref': '#/$defs/' + d}}}} for k, d in KIND_DEF.items()]}
+STREAM_KINDS = ['subscribe', 'subscribed', 'unsubscribe', 'unsubscribed', 'stream-events', 'replay']
+defs['messageOut']['properties']['kind']['enum'] += STREAM_KINDS
+body['oneOf'] += [
+    {'type': 'object', 'required': ['kind', 'streamId', 'code', 'subscriber', 'proof'], 'properties': {
+        'kind': {'const': 'subscribe'}, 'streamId': ID, 'code': {'type': 'string', 'minLength': 22, 'maxLength': 100},
+        'subscriber': {'$ref': 'stream.schema.json#/$defs/subscriber'}, 'proof': c('b64u')}},
+    {'type': 'object', 'required': ['kind', 'streamId', 'subscriptionId'], 'properties': {
+        'kind': {'const': 'subscribed'}, 'streamId': ID, 'subscriptionId': {'type': 'string', 'maxLength': 100}, 'descriptor': {'$ref': 'stream.schema.json'}}},
+    {'type': 'object', 'required': ['kind', 'streamId', 'subscriptionId'], 'properties': {
+        'kind': {'const': 'unsubscribe'}, 'streamId': ID, 'subscriptionId': {'type': 'string', 'maxLength': 100}}},
+    {'type': 'object', 'required': ['kind', 'streamId', 'subscriptionId', 'deleted', 'sig'], 'properties': {
+        'kind': {'const': 'unsubscribed'}, 'streamId': ID, 'subscriptionId': {'type': 'string', 'maxLength': 100},
+        'deleted': {'type': 'boolean'}, 'at': c('time'), 'sig': c('b64u')}},
+    {'type': 'object', 'required': ['kind', 'events'], 'properties': {
+        'kind': {'const': 'stream-events'}, 'events': {'type': 'array', 'minItems': 1, 'maxItems': 100, 'items': {'$ref': 'stream.schema.json#/$defs/streamEvent'}}}},
+    {'type': 'object', 'required': ['kind', 'streamId'], 'properties': {
+        'kind': {'const': 'replay'}, 'streamId': ID, 'since': c('time')}},
+]
+
+for name, doc in [('payload', payload), ('receipt', receipt), ('card', card), ('message', message), ('registry', registry), ('bridge', bridge), ('stream', stream)]:
     (OUT / (name + '.schema.json')).write_text(json.dumps(doc, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     print('wrote', name)

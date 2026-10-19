@@ -27,7 +27,8 @@
         "revocation",
         "disclosure",
         "import",
-        "note"
+        "note",
+        "stream"
       ]
     },
     "createdAt": {
@@ -55,7 +56,8 @@
         "vet",
         "vss",
         "aevri.site",
-        "aevri.vvp"
+        "aevri.vvp",
+        "stream"
       ]
     },
     "retainUntil": {
@@ -349,6 +351,22 @@
           "properties": {
             "body": {
               "$ref": "#/$defs/note"
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "kind": {
+              "const": "stream"
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "body": {
+              "$ref": "#/$defs/stream"
             }
           }
         }
@@ -719,6 +737,9 @@
               }
             }
           }
+        },
+        "streamRef": {
+          "$ref": "stream.schema.json#/$defs/streamRef"
         }
       },
       "if": {
@@ -1259,7 +1280,13 @@
             "request",
             "event-offer",
             "card",
-            "suggestion"
+            "suggestion",
+            "subscribe",
+            "subscribed",
+            "unsubscribe",
+            "unsubscribed",
+            "stream-events",
+            "replay"
           ]
         },
         "sentAt": {
@@ -1409,6 +1436,135 @@
       "properties": {
         "text": {
           "$ref": "common.schema.json#/$defs/text"
+        }
+      }
+    },
+    "stream": {
+      "type": "object",
+      "required": [
+        "providerAddress",
+        "streamId",
+        "descriptor",
+        "addedAt"
+      ],
+      "properties": {
+        "providerAddress": {
+          "$ref": "common.schema.json#/$defs/address"
+        },
+        "streamId": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "descriptorUrl": {
+          "type": "string",
+          "pattern": "^https://"
+        },
+        "descriptor": {
+          "$ref": "stream.schema.json"
+        },
+        "subscriptionId": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "cursor": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "selfRefs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 100
+          }
+        },
+        "contactMap": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "ref",
+              "contactId"
+            ],
+            "properties": {
+              "ref": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "contactId": {
+                "$ref": "common.schema.json#/$defs/uuid"
+              }
+            }
+          }
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "match"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "common.schema.json#/$defs/uuid"
+              },
+              "match": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string"
+                  },
+                  "participantRef": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "actorRef": {
+                    "type": "string",
+                    "maxLength": 100
+                  }
+                }
+              },
+              "createdAt": {
+                "$ref": "common.schema.json#/$defs/time"
+              }
+            }
+          }
+        },
+        "handled": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "eventId",
+              "rev",
+              "state"
+            ],
+            "properties": {
+              "eventId": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "rev": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "state": {
+                "enum": [
+                  "confirmed",
+                  "rejected",
+                  "withdrawn"
+                ]
+              }
+            }
+          }
+        },
+        "paused": {
+          "type": "boolean"
+        },
+        "leaving": {
+          "type": "boolean"
+        },
+        "addedAt": {
+          "$ref": "common.schema.json#/$defs/time"
         }
       }
     }
