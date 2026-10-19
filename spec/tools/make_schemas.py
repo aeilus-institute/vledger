@@ -350,6 +350,26 @@ defs['messageOut']['properties']['kind']['enum'] += FB_KINDS
 body['oneOf'] += [{'$ref': 'stream.schema.json#/$defs/feedback'}, {'$ref': 'stream.schema.json#/$defs/feedbackReceipt'},
                   fb_control('feedback-status'), fb_control('feedback-withdraw')]
 
+# Closed streams and verified people (SPEC 20.13, d10)
+audience = {'type': 'object', 'required': ['providerAddress', 'streamId'], 'properties': {'providerAddress': c('address'), 'streamId': ID}}
+CLAIM = {'type': 'string', 'pattern': '^[a-z][a-z0-9-]*(:[A-Za-z0-9._-]{1,80})?$', 'maxLength': 100}
+attestation = {'type': 'object', 'required': ['attestation', 'sig'], 'properties': {
+    'attestation': {'type': 'object', 'required': ['type', 'version', 'issuer', 'subject', 'claim', 'audience', 'issuedAt', 'expiresAt'], 'properties': {
+        'type': {'const': 'aevri.vledger.attestation'}, 'version': {'const': 1}, 'issuer': c('address'), 'issuerName': LINE,
+        'subject': c('address'), 'claim': CLAIM, 'audience': audience, 'issuedAt': c('time'), 'expiresAt': c('time')}},
+    'sig': c('b64u')}}
+requires = {'type': 'object', 'required': ['issuer', 'claim'], 'properties': {'issuer': c('address'), 'claim': CLAIM}}
+stream_body['properties']['access'] = {'enum': ['open', 'code', 'attested']}
+stream_body['properties']['requires'] = requires
+stream_body['allOf'].append({'if': {'properties': {'access': {'const': 'attested'}}}, 'then': {'required': ['requires']}})
+stream_body['properties']['feedback']['properties']['requires'] = requires
+ATTS = {'type': 'array', 'minItems': 1, 'maxItems': 4, 'items': {'$ref': 'stream.schema.json#/$defs/attestation'}}
+feedback['properties']['attestations'] = ATTS
+stream['$defs'].update({'attestation': attestation, 'requires': requires})
+body['oneOf'].append({'type': 'object', 'required': ['kind', 'streamId', 'challenge', 'subscriber', 'attestations', 'proof'], 'properties': {
+    'kind': {'const': 'subscribe'}, 'streamId': ID, 'challenge': {'type': 'string', 'minLength': 16, 'maxLength': 200},
+    'subscriber': {'$ref': 'stream.schema.json#/$defs/subscriber'}, 'attestations': ATTS, 'proof': c('b64u')}})
+
 for name, doc in [('payload', payload), ('receipt', receipt), ('card', card), ('message', message), ('registry', registry), ('bridge', bridge), ('stream', stream)]:
     (OUT / (name + '.schema.json')).write_text(json.dumps(doc, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     print('wrote', name)

@@ -1,8 +1,9 @@
 # Value Wallet format and protocols - `aevri.vledger` 1.0
 
-Status: **draft 1.0-d9** (2026-10-19). Editor: Aeilus Value Research Institute (ÆVRI).
+Status: **draft 1.0-d10** (2026-10-19). Editor: Aeilus Value Research Institute (ÆVRI).
 Licence: CC BY 4.0 (this text), MIT (reference code and schemas). Requirements (Russian): TZ v0.2 and v0.3.
 Fixtures in `fixtures/` are produced by `reference/` (Web Crypto) and pass the independent `tools/verify_fixtures.py`.
+Changes from d9: closed streams and verified people: attestations, `access: "attested"`, `requires` (20.13).
 Changes from d8: event streams (section 20): providers suggest events to the people who took part,
 connected by a QR code or a link; feedback to a stream and personal streams (20.11, 20.12); `stream` records, `streamRef`, `schema/stream.schema.json`.
 Changes from d7: spheres link VSS schemas and show them as a map (section 19).
@@ -405,7 +406,7 @@ A provider describes a stream with a signed descriptor (`schema/stream.schema.js
     "streamId": "<uuid v7>", "title": "2dBrain: my meetings and calls",
     "provider": { "name": "2dBrain", "kind": "device", "address": "vw1:...",
                   "encKey": { "kty": "EC", "crv": "P-256", "x": "...", "y": "..." } },
-    "access": "open | code",
+    "access": "open | code | attested",
     "transport": ["https", "relay"],
     "endpoint": "https://example.org/vledger-stream/v1",
     "relay": "https://aeilus.institute/api/v1/vledger/relay",
@@ -476,7 +477,8 @@ Open streams need no subscription: the wallet only pulls. For `code` streams:
   `{kind: "subscribed", streamId, subscriptionId, descriptor?}`; a repeated identical request returns the same answer.
 - The provider binds the subscription to what the pairing screen belongs to (its owner, a participant). It MUST NOT
   ask for, accept or store the holder's main wallet address, name, contacts or anything from the wallet.
-  Subscribing never requires a disclosure; feedback the holder sends separately (20.11) is allowed.
+  Subscribing discloses only the subscription fields and, where a stream requires them, attestations the holder
+  approved (20.13); it never gives access to the wallet. Feedback the holder sends separately (20.11) is allowed.
 - Subscription keys stay on the device where they were made, in encrypted device-local storage, outside the wallet
   document (like section 18): they are never synced or exported. Another device of the same holder connects to
   an open stream by itself and to a private stream with its own pairing. The stream record itself (20.8) is synced, so all devices know the stream and
@@ -684,3 +686,69 @@ reader gives access, not a role in the events: a personal stream never marks any
   a list, which the holder approves before it is sent. Withdrawing follows 20.11.
 - To share one assessment with one person, the `share` message (section 11) is enough; a personal stream is for
   sharing that continues.
+
+### 20.13. Closed streams and verified people (d10)
+
+A stream often needs to know *what kind* of person it talks to, not *who*: only the members of a department, only
+residents of a town, or only people with a checked account at the institute. An **attestation** says exactly that
+about one key, and nothing more.
+
+```json
+{ "attestation": {
+    "type": "aevri.vledger.attestation", "version": 1,
+    "issuer": "vw1:<issuer key>", "issuerName": "ÆVRI",
+    "subject": "vw1:<the key it speaks about>",
+    "claim": "account-verified",
+    "audience": { "providerAddress": "vw1:...", "streamId": "..." },
+    "issuedAt": "2026-10-19T10:00:00Z", "expiresAt": "2026-11-18T10:00:00Z" },
+  "sig": "<issuer key over JCS of attestation>" }
+```
+
+- **Issuers** sign claims they checked themselves, never claims a requester merely asks for. The institute issues
+  `account-verified`: a signed-in site account with a confirmed e-mail address. That proves neither a legal identity,
+  nor a unique human, nor taking part in an event. An employer may issue `member:<unit>`, a town `resident:<place>`.
+  An issuer publishes a signed card (section 3) and its attestation policy: how it checks, what it keeps and for how
+  long.
+- **Subject** is a key made for this stream: the subscription key (20.4) or the one-time key of a feedback item
+  (20.11); the holder's main wallet address only when the holder sends as `named`. The stream learns "a checked
+  account" or "a member of the unit", not who it is.
+- **This is pseudonymity towards the stream, not anonymity towards the issuer.** The issuer knows which of its
+  accounts a key belongs to, and the `audience` tells it which stream the key is for; the protocol never sends it what
+  is sent with the key. An issuer and a provider working together could identify the holder. Issuers keep as little
+  as they can, say how long they keep it, never profile holders and never hand over the link between keys and
+  accounts. The wallet explains this before asking.
+- **Getting one** is one tap in the wallet: "Confirm with ÆVRI" (or with the employer). The wallet shows the issuer,
+  the claim, the stream and the expiry, and asks the holder. Then it fetches a one-time challenge (5 minutes, bound
+  to the signed-in session) and sends `{subject, claim, audience, challenge, proof}`, where `proof` is the subject
+  key's signature over JCS `{purpose: "aevri.vledger/1|attest", issuer, subject, claim, audience, challenge}`. The
+  institute endpoint is `POST /api/v1/vledger/attest` (with `GET .../attest/challenge`), same-origin, CSRF-protected.
+- **Lifetime.** In the pilot an attestation lives at most 30 days and cannot be revoked early by the issuer, so a
+  closed account may keep access for up to 30 days. The provider checks validity on every private fetch, replay, push
+  and new feedback item, and a subscription ends when its attestation expires, unless the wallet brings a fresh one.
+  The stream owner can end any subscription at once. Expiry never removes what was already delivered and never stops
+  a sender from withdrawing earlier feedback.
+- Copying an attestation gives nothing without the subject's private key.
+
+The descriptor states one issuer and one claim per requirement:
+
+```json
+"access": "attested",
+"requires": { "issuer": "vw1:<employer key>", "claim": "member:datsteam-dit" },
+"feedback": { "...": "20.11", "requires": { "issuer": "vw1:<ÆVRI key>", "claim": "account-verified" } }
+```
+
+- The stream owner trusts that issuer key for that claim only; a name or a self-signed card gives no authority.
+  Access and feedback requirements are independent. Changing them follows the descriptor approval rules of 20.2.
+- **Closed stream.** `access: "attested"` needs no pairing code: the link or QR code is enough. The wallet fetches a
+  challenge from the provider and subscribes with `{kind: "subscribe", streamId, challenge, subscriber,
+  attestations, proof}`, where `proof` signs JCS `{purpose: "aevri.vledger/1|subscribe-attested", providerAddress,
+  streamId, challenge, subscriber, attestationHashes}`. The provider checks the issuer signature, the issuer and claim
+  against `requires`, type, version, validity, `audience` and that `subject` is the subscriber address. A `code`
+  stream MAY require attestations as well. Attested access lets a person read; it does not prove taking part and does
+  not publish anything. Readers of a personal `selected-readers` stream are still approved one by one (20.12).
+- **Verified feedback.** With `feedback.requires`, an `anonymous` item carries an attestation about its one-time key
+  and a `subscriber` item one about the subscription key; the item signature covers `attestations`. When feedback is
+  published anonymously, the stream publishes neither the attestation nor the key.
+- Three levels the wallet shows before sending: **anyone** (no attestation), **checked, not named** (an
+  attestation), **named** (identity key and card; the card is the holder's own claim, not a checked identity).
+- Deferred beyond the pilot: "one voice per person", several issuers per requirement, early revocation.

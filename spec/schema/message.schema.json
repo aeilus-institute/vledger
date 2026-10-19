@@ -603,6 +603,44 @@
               "$ref": "common.schema.json#/$defs/b64u"
             }
           }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "streamId",
+            "challenge",
+            "subscriber",
+            "attestations",
+            "proof"
+          ],
+          "properties": {
+            "kind": {
+              "const": "subscribe"
+            },
+            "streamId": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "challenge": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 200
+            },
+            "subscriber": {
+              "$ref": "stream.schema.json#/$defs/subscriber"
+            },
+            "attestations": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 4,
+              "items": {
+                "$ref": "stream.schema.json#/$defs/attestation"
+              }
+            },
+            "proof": {
+              "$ref": "common.schema.json#/$defs/b64u"
+            }
+          }
         }
       ]
     }
