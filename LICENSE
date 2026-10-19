@@ -2,9 +2,6 @@ MIT License
 
 Copyright (c) 2026 Aeilus Value Research Institute (ÆVRI), https://aeilus.institute/
 
-This licence covers the code and the JSON Schemas in this repository (app/, android/, spec/ schemas, reference
-modules and tools). The text of the specification is licensed separately, see LICENSE-SPEC.md.
-
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights
